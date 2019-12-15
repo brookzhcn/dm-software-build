@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 import json
+import matplotlib.pyplot as plt
 
 
 class PreProcessError(Exception):
@@ -33,11 +34,56 @@ class PreProcessor:
     9， 10 应该是有用的
 
     """
+
     def __init__(self, data_root_directory):
         self.data_root_directory = data_root_directory
 
     def get_sub_folders(self):
         return os.listdir(self.data_root_directory)
+
+    @staticmethod
+    def merge_commits(commits):
+        """
+        为了方便特征提取，需要将多个commits merge在一起
+        :param commits: 多次提交列表
+        :return: a merged object
+        """
+        merged_object = {}
+        for commit in commits:
+            for key, val in commit.items():
+                if key not in merged_object:
+                    merged_object[key] = [val]
+                else:
+                    merged_object[key].append(val)
+        return merged_object
+
+    @staticmethod
+    def merged_object_feature_extraction(merged_object: dict):
+        files = merged_object['files']
+        total_additions = 0
+        total_deletions = 0
+        total_file_added = 0
+        total_file_deleted = 0
+        total_file_modified = 0
+        file_name_postfixes = set()
+        top_folder_names = set()
+        for file_list in files:
+            for file in file_list:
+                print(file)
+                total_additions += file['additions']
+                total_deletions += file['deletions']
+                file_names = file['filename'].split(sep='.')
+                file_name_postfixes.add(file_names[-1])
+                top_folder_names.add(file_names[0].split('/')[0])
+                if file['status'] == 'modified':
+                    total_file_modified += 1
+                elif file['status'] == 'added':
+                    total_file_added += 1
+                elif file['status'] == 'deleted':
+                    total_file_deleted += 1
+        print(total_additions, total_deletions, file_name_postfixes, top_folder_names,
+              total_file_modified, total_file_added, total_file_deleted)
+        return total_additions, total_deletions, file_name_postfixes, top_folder_names
 
     def handle_sub_folder(self, sub_folder_name, preview=10):
         path = os.path.join(self.data_root_directory, sub_folder_name)
@@ -45,6 +91,10 @@ class PreProcessor:
             raise PreProcessError("Path dost not exist: %s" % path)
         train_set_path = os.path.join(path, 'train_set.txt')
         print(train_set_path)
+        x1 = []
+        y1 = []
+        x2 = []
+        y2 = []
         with open(train_set_path, 'r', encoding='utf-8') as f:
             train_set = json.load(f)
             passed_train_set = list(filter(lambda build: build['build_result'] == 'passed', train_set))
@@ -52,16 +102,28 @@ class PreProcessor:
             print(len(passed_train_set), len(failed_train_set), sep=',')
             if preview > 0:
                 for item in train_set[:preview]:
-                    print(item['build_id'])
-                    print(item['project_name'])
-                    print(item['build_result'])
-                    for commit in item['commits']:
-                        for key, val in commit.items():
-                            print(key, val, sep="=>")
-                    print("=================================================================")
-        # test_set_path = os.path.join(path, 'test_set.txt')
-        # train_set_df = pd.read_json(train_set_path)
-        # print(train_set_df)
+                    merged_object = self.merge_commits(item['commits'])
+                    x, y, t, w = self.merged_object_feature_extraction(merged_object)
+                    if x > 4000 or y > 4000:
+                        print(x, y, t, w, item['build_result'])
+                    if item['build_result'] == 'passed' and x < 500 and y < 500:
+                        x1.append(x)
+                        y1.append(y)
+                    elif item['build_result'] == 'failed' and x < 500 and y < 500:
+                        x2.append(x)
+                        y2.append(y)
+
+                fig, ax = plt.subplots()
+                print(x1, y1)
+                print(x2, y2)
+                ax.scatter(x1, y1, c='tab:blue', label='passed', alpha=0.3, edgecolors='none')
+                ax.scatter(x2, y2, c='tab:orange', label='failed', alpha=0.3, edgecolors='none')
+                ax.set_xlabel('add', fontsize=15)
+                ax.set_ylabel('delete', fontsize=15)
+                ax.legend()
+                ax.grid(True)
+                plt.show()
+                print('done')
 
 
 if __name__ == '__main__':

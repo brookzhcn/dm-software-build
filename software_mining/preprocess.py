@@ -41,6 +41,11 @@ class PreProcessor:
     def get_sub_folders(self):
         return os.listdir(self.data_root_directory)
 
+    def get_x_and_y(self, project_name, file_name,
+                    filter_func=lambda build: build['build_result'] in ['failed', 'passed']):
+        x, y = self.handle_project(project_name, file_name, filter_func, preview=0)
+        return x, y
+
     @staticmethod
     def merge_commits(commits):
         """
@@ -60,13 +65,23 @@ class PreProcessor:
     @staticmethod
     def merged_object_feature_extraction(merged_object: dict):
         files = merged_object['files']
+        # 所有commit中文件中增加的改动地方
         total_additions = 0
+        # 所有commit中文件中删除的改动地方
         total_deletions = 0
+
+        # 所有commit中增加的文件数目
         total_file_added = 0
+        # 所有commit中删除的文件数目：画图可以看出，该特征很重要
         total_file_deleted = 0
+        # 所有commit中修改的文件数目
         total_file_modified = 0
+
+        # 所有commit中所有改动文件的后缀：有可能某些文件后缀影响build成功率
         file_name_postfixes = set()
+        # 所有commit中所有改动文件的顶级目录：有些目录下面的文件改动会影响build成功率
         top_folder_names = set()
+
         for file_list in files:
             for file in file_list:
                 print(file)
@@ -83,29 +98,40 @@ class PreProcessor:
                     total_file_deleted += 1
         print(total_additions, total_deletions, file_name_postfixes, top_folder_names,
               total_file_modified, total_file_added, total_file_deleted)
-        return total_additions, total_deletions, file_name_postfixes, top_folder_names
 
-    def handle_sub_folder(self, sub_folder_name, preview=10):
+        return total_additions, total_deletions, total_file_added, total_file_deleted, total_file_modified, \
+            len(file_name_postfixes), len(top_folder_names)
+
+    def handle_project(self, sub_folder_name, file_name, filter_func, preview: int = 10):
         path = os.path.join(self.data_root_directory, sub_folder_name)
         if not os.path.exists(path):
             raise PreProcessError("Path dost not exist: %s" % path)
-        train_set_path = os.path.join(path, 'train_set.txt')
-        print(train_set_path)
-        x1 = []
-        y1 = []
-        x2 = []
-        y2 = []
+        train_set_path = os.path.join(path, file_name)
         with open(train_set_path, 'r', encoding='utf-8') as f:
             train_set = json.load(f)
-            passed_train_set = list(filter(lambda build: build['build_result'] == 'passed', train_set))
-            failed_train_set = list(filter(lambda build: build['build_result'] == 'failed', train_set))
-            print(len(passed_train_set), len(failed_train_set), sep=',')
+            # passed_train_set = list(filter(lambda build: build['build_result'] == 'passed', train_set))
+            # failed_train_set = list(filter(lambda build: build['build_result'] == 'failed', train_set))
+            filtered_train_set = filter(filter_func, train_set)
+            # print(len(passed_train_set), len(failed_train_set), sep=',')
+            x = []
+            y = []
+            for item in filtered_train_set:
+                merged_object = self.merge_commits(item['commits'])
+                # 从commit中抽取特征
+                features = self.merged_object_feature_extraction(merged_object)
+                y.append(item['build_result'])
+                x.append(features)
+
             if preview > 0:
+                x1 = []
+                y1 = []
+                x2 = []
+                y2 = []
                 for item in train_set[:preview]:
                     merged_object = self.merge_commits(item['commits'])
-                    x, y, t, w = self.merged_object_feature_extraction(merged_object)
-                    if x > 4000 or y > 4000:
-                        print(x, y, t, w, item['build_result'])
+                    features = self.merged_object_feature_extraction(merged_object)
+                    if features[0] > 4000 or features[1] > 4000:
+                        print(*features, item['build_result'])
                     if item['build_result'] == 'passed' and x < 500 and y < 500:
                         x1.append(x)
                         y1.append(y)
@@ -124,10 +150,11 @@ class PreProcessor:
                 ax.grid(True)
                 plt.show()
                 print('done')
+            return x, y
 
 
 if __name__ == '__main__':
     from software_mining.settings import DATA_ROOT_DIRECTORY
 
     processor = PreProcessor(data_root_directory=DATA_ROOT_DIRECTORY)
-    processor.handle_sub_folder('abarisain_dmix', preview=10)
+    processor.handle_project('abarisain_dmix', 'train_set.txt', preview=10)

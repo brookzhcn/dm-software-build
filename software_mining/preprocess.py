@@ -84,7 +84,7 @@ class PreProcessor:
 
         for file_list in files:
             for file in file_list:
-                print(file)
+                # print(file)
                 total_additions += file['additions']
                 total_deletions += file['deletions']
                 file_names = file['filename'].split(sep='.')
@@ -96,11 +96,12 @@ class PreProcessor:
                     total_file_added += 1
                 elif file['status'] == 'deleted':
                     total_file_deleted += 1
-        print(total_additions, total_deletions, file_name_postfixes, top_folder_names,
-              total_file_modified, total_file_added, total_file_deleted)
+        # print(total_additions, total_deletions, file_name_postfixes, top_folder_names,
+        #       total_file_modified, total_file_added, total_file_deleted)
 
-        return total_additions, total_deletions, total_file_added, total_file_deleted, total_file_modified, \
-            len(file_name_postfixes), len(top_folder_names)
+        features = [total_additions, total_deletions, total_file_added, total_file_deleted, total_file_modified,
+                    len(file_name_postfixes), len(top_folder_names)]
+        return features[:5]
 
     def handle_project(self, sub_folder_name, file_name, filter_func, preview: int = 10):
         path = os.path.join(self.data_root_directory, sub_folder_name)
@@ -115,12 +116,25 @@ class PreProcessor:
             # print(len(passed_train_set), len(failed_train_set), sep=',')
             x = []
             y = []
+            total_train_num = 0
+            total_passed_num = 0
+            total_failed_num = 0
             for item in filtered_train_set:
                 merged_object = self.merge_commits(item['commits'])
                 # 从commit中抽取特征
                 features = self.merged_object_feature_extraction(merged_object)
                 y.append(item['build_result'])
                 x.append(features)
+                total_train_num += 1
+                # print("build result:", item['build_result'])
+                if item['build_result'] == 'passed':
+                    total_passed_num += 1
+                elif item['build_result'] == 'failed':
+                    total_failed_num += 1
+
+            print("total train number is: ", total_train_num)
+            print("total passed number is: ", total_failed_num)
+            print("total failed number is: ", total_passed_num)
 
             if preview > 0:
                 x1 = []
@@ -132,10 +146,10 @@ class PreProcessor:
                     features = self.merged_object_feature_extraction(merged_object)
                     if features[0] > 4000 or features[1] > 4000:
                         print(*features, item['build_result'])
-                    if item['build_result'] == 'passed' and x < 500 and y < 500:
+                    if item['build_result'] == 'passed':
                         x1.append(x)
                         y1.append(y)
-                    elif item['build_result'] == 'failed' and x < 500 and y < 500:
+                    elif item['build_result'] == 'failed':
                         x2.append(x)
                         y2.append(y)
 
@@ -157,4 +171,4 @@ if __name__ == '__main__':
     from software_mining.settings import DATA_ROOT_DIRECTORY
 
     processor = PreProcessor(data_root_directory=DATA_ROOT_DIRECTORY)
-    processor.handle_project('abarisain_dmix', 'train_set.txt', preview=10)
+    print(processor.get_sub_folders())

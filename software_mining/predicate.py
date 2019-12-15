@@ -13,9 +13,9 @@ class Classifier:
         self.model = clf
 
     def validate(self, x, y):
-        clf = svm.SVC(kernel='linear', C=1)
-        # clf = tree.DecisionTreeClassifier()
-        scores = cross_val_score(clf, x, y, cv=10)
+        # clf = svm.SVC(kernel='linear', C=1)
+        clf = tree.DecisionTreeClassifier(max_depth=15)
+        scores = cross_val_score(clf, x, y, cv=5)
         print(scores, np.mean(scores))
         return scores
 
@@ -42,8 +42,9 @@ if __name__ == '__main__':
     print("Project name: ", project_name)
     processor = PreProcessor(data_root_directory=DATA_ROOT_DIRECTORY)
     train_x, train_y = processor.get_x_and_y(project_name, 'train_set.txt')
+    print(*processor.file_name_postfix_set)
     classifier = Classifier()
-    classifier.train(train_x, train_y)
+    # classifier.train(train_x, train_y)
     # test_x, test_y = processor.get_x_and_y(project_name, 'test_set.txt', lambda build: True)
     # classifier.test(test_x, test_y)
 

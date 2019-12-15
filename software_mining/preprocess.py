@@ -2,6 +2,36 @@ import pandas as pd
 import os
 import json
 import matplotlib.pyplot as plt
+import numpy as np
+
+COMPILE_UNRELATED_FILE_TYPES = [
+    'eot',
+    'map',
+    'tdd',
+    'cmd',
+    'clj',
+    'jpg',
+    'gitignore',
+    'markdown',
+    'ttf',
+    'ftl',
+    # style file
+    'scss',
+    'css',
+    'yaml',
+    'html',
+
+]
+COMPILE_RELATED_FILE_TYPES = [
+    # config file
+    'yml',
+    'rb',
+    'java',
+    'py',
+    'cmd',
+    # 'xml',
+    'js',
+]
 
 
 class PreProcessError(Exception):
@@ -37,6 +67,7 @@ class PreProcessor:
 
     def __init__(self, data_root_directory):
         self.data_root_directory = data_root_directory
+        self.file_name_postfix_set = set()
 
     def get_sub_folders(self):
         return os.listdir(self.data_root_directory)
@@ -62,8 +93,7 @@ class PreProcessor:
                     merged_object[key].append(val)
         return merged_object
 
-    @staticmethod
-    def merged_object_feature_extraction(merged_object: dict):
+    def merged_object_feature_extraction(self, merged_object: dict):
         files = merged_object['files']
         # 所有commit中文件中增加的改动地方
         total_additions = 0
@@ -81,27 +111,32 @@ class PreProcessor:
         file_name_postfixes = set()
         # 所有commit中所有改动文件的顶级目录：有些目录下面的文件改动会影响build成功率
         top_folder_names = set()
-
         for file_list in files:
             for file in file_list:
-                # print(file)
+                #print(file)
                 total_additions += file['additions']
                 total_deletions += file['deletions']
                 file_names = file['filename'].split(sep='.')
-                file_name_postfixes.add(file_names[-1])
+                file_name_postfix = file_names[-1]
+                file_name_postfixes.add(file_name_postfix)
                 top_folder_names.add(file_names[0].split('/')[0])
-                if file['status'] == 'modified':
-                    total_file_modified += 1
-                elif file['status'] == 'added':
-                    total_file_added += 1
-                elif file['status'] == 'deleted':
-                    total_file_deleted += 1
-        # print(total_additions, total_deletions, file_name_postfixes, top_folder_names,
-        #       total_file_modified, total_file_added, total_file_deleted)
-
-        features = [total_additions, total_deletions, total_file_added, total_file_deleted, total_file_modified,
+                if file_name_postfix in COMPILE_RELATED_FILE_TYPES:
+                    if file['status'] == 'modified':
+                        total_file_modified += 1
+                    elif file['status'] == 'added':
+                        total_file_added += 1
+                    elif file['status'] == 'deleted':
+                        total_file_deleted += 1
+        has_file_add = total_file_added > 0
+        has_file_deleted = total_file_deleted > 0
+        features = [total_additions,
+                    total_deletions,
+                    has_file_add, has_file_deleted,
+                    # total_file_added, total_file_deleted, total_file_modified,
                     len(file_name_postfixes), len(top_folder_names)]
-        return features[:5]
+        print(features)
+        self.file_name_postfix_set = self.file_name_postfix_set.union(file_name_postfixes)
+        return features[:4]
 
     def handle_project(self, sub_folder_name, file_name, filter_func, preview: int = 10):
         path = os.path.join(self.data_root_directory, sub_folder_name)
@@ -119,14 +154,20 @@ class PreProcessor:
             total_train_num = 0
             total_passed_num = 0
             total_failed_num = 0
+            # last time build result
+            last_build_result = True
             for item in filtered_train_set:
+                if item['build_result'] == 'failed':
+                    print(item)
                 merged_object = self.merge_commits(item['commits'])
                 # 从commit中抽取特征
                 features = self.merged_object_feature_extraction(merged_object)
                 y.append(item['build_result'])
+                # features.append(last_build_result)
+                last_build_result = item['build_result'] == 'passed'
                 x.append(features)
                 total_train_num += 1
-                # print("build result:", item['build_result'])
+                print("build result:", item['build_result'])
                 if item['build_result'] == 'passed':
                     total_passed_num += 1
                 elif item['build_result'] == 'failed':

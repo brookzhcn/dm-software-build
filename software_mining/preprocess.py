@@ -9,7 +9,7 @@ COMPILE_UNRELATED_FILE_TYPES = [
     'map',
     'tdd',
     'cmd',
-    'clj',
+
     'jpg',
     'gitignore',
     'markdown',
@@ -31,6 +31,7 @@ COMPILE_RELATED_FILE_TYPES = [
     'cmd',
     # 'xml',
     'js',
+    'clj',
 ]
 
 
@@ -113,19 +114,26 @@ class PreProcessor:
         top_folder_names = set()
         for file_list in files:
             for file in file_list:
-                #print(file)
+                # print(file)
                 total_additions += file['additions']
                 total_deletions += file['deletions']
                 file_names = file['filename'].split(sep='.')
                 file_name_postfix = file_names[-1]
                 file_name_postfixes.add(file_name_postfix)
-                top_folder_names.add(file_names[0].split('/')[0])
+                file_name_paths = file_names[0].split('/')
+                top_folder_names.add(file_name_paths[0])
+                if 'test' in file_name_paths:
+                    print(file['filename'])
+                    continue
                 if file_name_postfix in COMPILE_RELATED_FILE_TYPES:
                     if file['status'] == 'modified':
+                        print("Modify: ", file['filename'])
                         total_file_modified += 1
                     elif file['status'] == 'added':
+                        print("Add: ", file['filename'])
                         total_file_added += 1
                     elif file['status'] == 'deleted':
+                        print("Delete: ", file['filename'])
                         total_file_deleted += 1
         has_file_add = total_file_added > 0
         has_file_deleted = total_file_deleted > 0
@@ -134,9 +142,15 @@ class PreProcessor:
                     has_file_add, has_file_deleted,
                     # total_file_added, total_file_deleted, total_file_modified,
                     len(file_name_postfixes), len(top_folder_names)]
-        print(features)
+        print('Feature vector: ', features)
         self.file_name_postfix_set = self.file_name_postfix_set.union(file_name_postfixes)
         return features[:4]
+
+    def view_build_failed_info(self, item):
+        for commit in item['commits']:
+            for file in commit['files']:
+                print('File name:{} additions: {} deletions {} status {}'.format(
+                    file['filename'], file['additions'], file['deletions'], file['status']))
 
     def handle_project(self, sub_folder_name, file_name, filter_func, preview: int = 10):
         path = os.path.join(self.data_root_directory, sub_folder_name)
@@ -154,11 +168,15 @@ class PreProcessor:
             total_train_num = 0
             total_passed_num = 0
             total_failed_num = 0
-            # last time build result
-            last_build_result = True
             for item in filtered_train_set:
+                print("\nbuild id: ", repr(item['build_id']))
+                if item['build_id'] in ['114379271']:
+                    with open('error.json', 'w') as f:
+                        json.dump(item, f)
+                        exit(-1)
+                print("build result:", item['build_result'])
                 if item['build_result'] == 'failed':
-                    print(item)
+                    self.view_build_failed_info(item)
                 merged_object = self.merge_commits(item['commits'])
                 # 从commit中抽取特征
                 features = self.merged_object_feature_extraction(merged_object)
@@ -167,13 +185,12 @@ class PreProcessor:
                 last_build_result = item['build_result'] == 'passed'
                 x.append(features)
                 total_train_num += 1
-                print("build result:", item['build_result'])
                 if item['build_result'] == 'passed':
                     total_passed_num += 1
                 elif item['build_result'] == 'failed':
                     total_failed_num += 1
 
-            print("total train number is: ", total_train_num)
+            print("\ntotal train number is: ", total_train_num)
             print("total passed number is: ", total_failed_num)
             print("total failed number is: ", total_passed_num)
 

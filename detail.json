@@ -1,0 +1,226 @@
+{
+  "project_name": "apache_storm",
+  "build_id": "113700629",
+  "commits": [
+    {
+      "sha": "e065998334f2cde09506851fb9364e5d1b40803d",
+      "commit": {
+        "author": {
+          "name": "Robert (Bobby) Evans",
+          "email": "evans@yahoo-inc.com",
+          "date": "2016-03-04T15:53:29Z"
+        },
+        "committer": {
+          "name": "Robert (Bobby) Evans",
+          "email": "evans@yahoo-inc.com",
+          "date": "2016-03-04T15:53:29Z"
+        },
+        "message": "Added STORM-1283 to Changelog and moved test file to test directory",
+        "tree": {
+          "sha": "7e384e5a30448b3a6ee78296d4a2883795325626",
+          "url": "https://api.github.com/repos/apache/storm/git/trees/7e384e5a30448b3a6ee78296d4a2883795325626"
+        },
+        "url": "https://api.github.com/repos/apache/storm/git/commits/e065998334f2cde09506851fb9364e5d1b40803d",
+        "comment_count": 0
+      },
+      "url": "https://api.github.com/repos/apache/storm/commits/e065998334f2cde09506851fb9364e5d1b40803d",
+      "html_url": "https://github.com/apache/storm/commit/e065998334f2cde09506851fb9364e5d1b40803d",
+      "comments_url": "https://api.github.com/repos/apache/storm/commits/e065998334f2cde09506851fb9364e5d1b40803d/comments",
+      "author": {
+        "login": "revans2",
+        "id": 3441321,
+        "avatar_url": "https://avatars.githubusercontent.com/u/3441321?v=3",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/revans2",
+        "html_url": "https://github.com/revans2",
+        "followers_url": "https://api.github.com/users/revans2/followers",
+        "following_url": "https://api.github.com/users/revans2/following{/other_user}",
+        "gists_url": "https://api.github.com/users/revans2/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/revans2/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/revans2/subscriptions",
+        "organizations_url": "https://api.github.com/users/revans2/orgs",
+        "repos_url": "https://api.github.com/users/revans2/repos",
+        "events_url": "https://api.github.com/users/revans2/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/revans2/received_events",
+        "type": "User",
+        "site_admin": false
+      },
+      "committer": {
+        "login": "revans2",
+        "id": 3441321,
+        "avatar_url": "https://avatars.githubusercontent.com/u/3441321?v=3",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/revans2",
+        "html_url": "https://github.com/revans2",
+        "followers_url": "https://api.github.com/users/revans2/followers",
+        "following_url": "https://api.github.com/users/revans2/following{/other_user}",
+        "gists_url": "https://api.github.com/users/revans2/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/revans2/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/revans2/subscriptions",
+        "organizations_url": "https://api.github.com/users/revans2/orgs",
+        "repos_url": "https://api.github.com/users/revans2/repos",
+        "events_url": "https://api.github.com/users/revans2/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/revans2/received_events",
+        "type": "User",
+        "site_admin": false
+      },
+      "parents": [
+        {
+          "sha": "47793e4214ba0ca0cdfbc2ac72bdff083bd21d7c",
+          "url": "https://api.github.com/repos/apache/storm/commits/47793e4214ba0ca0cdfbc2ac72bdff083bd21d7c",
+          "html_url": "https://github.com/apache/storm/commit/47793e4214ba0ca0cdfbc2ac72bdff083bd21d7c"
+        }
+      ],
+      "stats": {
+        "total": 1,
+        "additions": 1,
+        "deletions": 0
+      },
+      "files": [
+        {
+          "sha": "58133dd920a42574fe47c1122428b119eea8574b",
+          "filename": "CHANGELOG.md",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0,
+          "changes": 1,
+          "blob_url": "https://github.com/apache/storm/blob/e065998334f2cde09506851fb9364e5d1b40803d/CHANGELOG.md",
+          "raw_url": "https://github.com/apache/storm/raw/e065998334f2cde09506851fb9364e5d1b40803d/CHANGELOG.md",
+          "contents_url": "https://api.github.com/repos/apache/storm/contents/CHANGELOG.md?ref=e065998334f2cde09506851fb9364e5d1b40803d",
+          "patch": "@@ -1,4 +1,5 @@\n ## 2.0.0\n+ * STORM-1283: port backtype.storm.MockAutoCred to java\n  * STORM-1592: clojure code calling into Utils.exitProcess throws ClassCastException\n  * STORM-1579: Fix NoSuchFileException when running tests in storm-core\n  * STORM-1244: port backtype.storm.command.upload-credentials to java"
+        },
+        {
+          "sha": "2bcf9736d7b8136846c1d90ba9bbf478f6395240",
+          "filename": "storm-core/test/jvm/org/apache/storm/MockAutoCred.java",
+          "status": "renamed",
+          "additions": 0,
+          "deletions": 0,
+          "changes": 0,
+          "blob_url": "https://github.com/apache/storm/blob/e065998334f2cde09506851fb9364e5d1b40803d/storm-core/test/jvm/org/apache/storm/MockAutoCred.java",
+          "raw_url": "https://github.com/apache/storm/raw/e065998334f2cde09506851fb9364e5d1b40803d/storm-core/test/jvm/org/apache/storm/MockAutoCred.java",
+          "contents_url": "https://api.github.com/repos/apache/storm/contents/storm-core/test/jvm/org/apache/storm/MockAutoCred.java?ref=e065998334f2cde09506851fb9364e5d1b40803d",
+          "previous_filename": "storm-core/src/jvm/org/apache/storm/MockAutoCred.java"
+        }
+      ]
+    },
+    {
+      "sha": "47793e4214ba0ca0cdfbc2ac72bdff083bd21d7c",
+      "commit": {
+        "author": {
+          "name": "Robert (Bobby) Evans",
+          "email": "evans@yahoo-inc.com",
+          "date": "2016-03-04T15:52:40Z"
+        },
+        "committer": {
+          "name": "Robert (Bobby) Evans",
+          "email": "evans@yahoo-inc.com",
+          "date": "2016-03-04T15:52:40Z"
+        },
+        "message": "Merge branch 'mockautocred' of https://github.com/abhishekagarwal87/storm into STORM-1283\n\nSTORM-1283: port backtype.storm.MockAutoCred to java",
+        "tree": {
+          "sha": "a9ec55a1592cbda746b820c9da5f9a6eec867653",
+          "url": "https://api.github.com/repos/apache/storm/git/trees/a9ec55a1592cbda746b820c9da5f9a6eec867653"
+        },
+        "url": "https://api.github.com/repos/apache/storm/git/commits/47793e4214ba0ca0cdfbc2ac72bdff083bd21d7c",
+        "comment_count": 0
+      },
+      "url": "https://api.github.com/repos/apache/storm/commits/47793e4214ba0ca0cdfbc2ac72bdff083bd21d7c",
+      "html_url": "https://github.com/apache/storm/commit/47793e4214ba0ca0cdfbc2ac72bdff083bd21d7c",
+      "comments_url": "https://api.github.com/repos/apache/storm/commits/47793e4214ba0ca0cdfbc2ac72bdff083bd21d7c/comments",
+      "author": {
+        "login": "revans2",
+        "id": 3441321,
+        "avatar_url": "https://avatars.githubusercontent.com/u/3441321?v=3",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/revans2",
+        "html_url": "https://github.com/revans2",
+        "followers_url": "https://api.github.com/users/revans2/followers",
+        "following_url": "https://api.github.com/users/revans2/following{/other_user}",
+        "gists_url": "https://api.github.com/users/revans2/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/revans2/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/revans2/subscriptions",
+        "organizations_url": "https://api.github.com/users/revans2/orgs",
+        "repos_url": "https://api.github.com/users/revans2/repos",
+        "events_url": "https://api.github.com/users/revans2/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/revans2/received_events",
+        "type": "User",
+        "site_admin": false
+      },
+      "committer": {
+        "login": "revans2",
+        "id": 3441321,
+        "avatar_url": "https://avatars.githubusercontent.com/u/3441321?v=3",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/revans2",
+        "html_url": "https://github.com/revans2",
+        "followers_url": "https://api.github.com/users/revans2/followers",
+        "following_url": "https://api.github.com/users/revans2/following{/other_user}",
+        "gists_url": "https://api.github.com/users/revans2/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/revans2/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/revans2/subscriptions",
+        "organizations_url": "https://api.github.com/users/revans2/orgs",
+        "repos_url": "https://api.github.com/users/revans2/repos",
+        "events_url": "https://api.github.com/users/revans2/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/revans2/received_events",
+        "type": "User",
+        "site_admin": false
+      },
+      "parents": [
+        {
+          "sha": "cc7ef89c34d696c9e227154a532823472e02614f",
+          "url": "https://api.github.com/repos/apache/storm/commits/cc7ef89c34d696c9e227154a532823472e02614f",
+          "html_url": "https://github.com/apache/storm/commit/cc7ef89c34d696c9e227154a532823472e02614f"
+        },
+        {
+          "sha": "035f47a0edbffe445f642bb5c6138d776a472bff",
+          "url": "https://api.github.com/repos/apache/storm/commits/035f47a0edbffe445f642bb5c6138d776a472bff",
+          "html_url": "https://github.com/apache/storm/commit/035f47a0edbffe445f642bb5c6138d776a472bff"
+        }
+      ],
+      "stats": {
+        "total": 143,
+        "additions": 80,
+        "deletions": 63
+      },
+      "files": [
+        {
+          "sha": "7e23c6be39eac5cb55cf68ae7bc24b9b0f758a45",
+          "filename": "storm-core/src/clj/org/apache/storm/MockAutoCred.clj",
+          "status": "removed",
+          "additions": 0,
+          "deletions": 58,
+          "changes": 58,
+          "blob_url": "https://github.com/apache/storm/blob/cc7ef89c34d696c9e227154a532823472e02614f/storm-core/src/clj/org/apache/storm/MockAutoCred.clj",
+          "raw_url": "https://github.com/apache/storm/raw/cc7ef89c34d696c9e227154a532823472e02614f/storm-core/src/clj/org/apache/storm/MockAutoCred.clj",
+          "contents_url": "https://api.github.com/repos/apache/storm/contents/storm-core/src/clj/org/apache/storm/MockAutoCred.clj?ref=cc7ef89c34d696c9e227154a532823472e02614f",
+          "patch": "@@ -1,58 +0,0 @@\n-;; Licensed to the Apache Software Foundation (ASF) under one\n-;; or more contributor license agreements.  See the NOTICE file\n-;; distributed with this work for additional information\n-;; regarding copyright ownership.  The ASF licenses this file\n-;; to you under the Apache License, Version 2.0 (the\n-;; \"License\"); you may not use this file except in compliance\n-;; with the License.  You may obtain a copy of the License at\n-;;\n-;; http://www.apache.org/licenses/LICENSE-2.0\n-;;\n-;; Unless required by applicable law or agreed to in writing, software\n-;; distributed under the License is distributed on an \"AS IS\" BASIS,\n-;; WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n-;; See the License for the specific language governing permissions and\n-;; limitations under the License.\n-\n-;;mock implementation of INimbusCredentialPlugin,IAutoCredentials and ICredentialsRenewer for testing only.\n-(ns org.apache.storm.MockAutoCred\n-  (:use [org.apache.storm testing config])\n-  (:import [org.apache.storm.security.INimbusCredentialPlugin]\n-           [org.apache.storm.security.auth   ICredentialsRenewer])\n-  (:gen-class\n-    :implements [org.apache.storm.security.INimbusCredentialPlugin\n-                 org.apache.storm.security.auth.IAutoCredentials\n-                 org.apache.storm.security.auth.ICredentialsRenewer]))\n-\n-(def nimbus-cred-key \"nimbusCredTestKey\")\n-(def nimbus-cred-val \"nimbusTestCred\")\n-(def nimbus-cred-renew-val \"renewedNimbusTestCred\")\n-(def gateway-cred-key \"gatewayCredTestKey\")\n-(def gateway-cred-val \"gatewayTestCred\")\n-(def gateway-cred-renew-val \"renewedGatewayTestCred\")\n-\n-(defn -populateCredentials\n-  ([this creds conf]\n-  (.put creds nimbus-cred-key nimbus-cred-val))\n-  ([this creds]\n-  (.put creds gateway-cred-key gateway-cred-val)))\n-\n-(defn -prepare\n-  [this conf])\n-\n-(defn -renew\n-  [this cred conf]\n-  (.put cred nimbus-cred-key nimbus-cred-renew-val)\n-  (.put cred gateway-cred-key gateway-cred-renew-val))\n-\n-(defn -populateSubject\n-  [subject credentials]\n-  (.add (.getPublicCredentials subject) (.get credentials nimbus-cred-key))\n-  (.add (.getPublicCredentials subject) (.get credentials gateway-cred-key)))\n-\n-(defn -updateSubject\n-  [subject credentials]\n-  (-populateSubject subject credentials))\n-\n-\n-"
+        },
+        {
+          "sha": "2bcf9736d7b8136846c1d90ba9bbf478f6395240",
+          "filename": "storm-core/src/jvm/org/apache/storm/MockAutoCred.java",
+          "status": "added",
+          "additions": 75,
+          "deletions": 0,
+          "changes": 75,
+          "blob_url": "https://github.com/apache/storm/blob/47793e4214ba0ca0cdfbc2ac72bdff083bd21d7c/storm-core/src/jvm/org/apache/storm/MockAutoCred.java",
+          "raw_url": "https://github.com/apache/storm/raw/47793e4214ba0ca0cdfbc2ac72bdff083bd21d7c/storm-core/src/jvm/org/apache/storm/MockAutoCred.java",
+          "contents_url": "https://api.github.com/repos/apache/storm/contents/storm-core/src/jvm/org/apache/storm/MockAutoCred.java?ref=47793e4214ba0ca0cdfbc2ac72bdff083bd21d7c",
+          "patch": "@@ -0,0 +1,75 @@\n+/**\n+ * Licensed to the Apache Software Foundation (ASF) under one\n+ * or more contributor license agreements.  See the NOTICE file\n+ * distributed with this work for additional information\n+ * regarding copyright ownership.  The ASF licenses this file\n+ * to you under the Apache License, Version 2.0 (the\n+ * \"License\"); you may not use this file except in compliance\n+ * with the License.  You may obtain a copy of the License at\n+ *\n+ * http://www.apache.org/licenses/LICENSE-2.0\n+ *\n+ * Unless required by applicable law or agreed to in writing, software\n+ * distributed under the License is distributed on an \"AS IS\" BASIS,\n+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n+ * See the License for the specific language governing permissions and\n+ * limitations under the License.\n+ */\n+package org.apache.storm;\n+\n+import org.apache.storm.security.INimbusCredentialPlugin;\n+import org.apache.storm.security.auth.IAutoCredentials;\n+import org.apache.storm.security.auth.ICredentialsRenewer;\n+\n+import java.util.Map;\n+\n+import javax.security.auth.Subject;\n+\n+/**\n+ * mock implementation of INimbusCredentialPlugin,IAutoCredentials and ICredentialsRenewer for testing only.\n+ */\n+public class MockAutoCred implements INimbusCredentialPlugin, IAutoCredentials, ICredentialsRenewer {\n+    public static final String NIMBUS_CRED_KEY = \"nimbusCredTestKey\";\n+    public static final String NIMBUS_CRED_VAL = \"nimbusTestCred\";\n+    public static final String NIMBUS_CRED_RENEW_VAL = \"renewedNimbusTestCred\";\n+    public static final String GATEWAY_CRED_KEY = \"gatewayCredTestKey\";\n+    public static final String GATEWAY_CRED_VAL = \"gatewayTestCred\";\n+    public static final String GATEWAY_CRED_RENEW_VAL = \"renewedGatewayTestCred\";\n+\n+    @Override\n+    public void populateCredentials(Map<String, String> credentials) {\n+        credentials.put(GATEWAY_CRED_KEY, GATEWAY_CRED_VAL);\n+    }\n+\n+    @Override\n+    public void populateCredentials(Map<String, String> credentials, Map conf) {\n+        credentials.put(NIMBUS_CRED_KEY, NIMBUS_CRED_VAL);\n+    }\n+\n+    @Override\n+    public void populateSubject(Subject subject, Map<String, String> credentials) {\n+        subject.getPublicCredentials().add(credentials.get(NIMBUS_CRED_KEY));\n+        subject.getPublicCredentials().add(credentials.get(GATEWAY_CRED_KEY));\n+    }\n+\n+    @Override\n+    public void updateSubject(Subject subject, Map<String, String> credentials) {\n+        populateSubject(subject, credentials);\n+    }\n+\n+    @Override\n+    public void renew(Map<String, String> credentials, Map topologyConf) {\n+        credentials.put(NIMBUS_CRED_KEY, NIMBUS_CRED_RENEW_VAL);\n+        credentials.put(GATEWAY_CRED_KEY, GATEWAY_CRED_RENEW_VAL);\n+    }\n+\n+    @Override\n+    public void prepare(Map conf) {\n+\n+    }\n+\n+    @Override\n+    public void shutdown() {\n+\n+    }\n+}"
+        },
+        {
+          "sha": "fb000da5b011d0d5fb1fa23c85d492e29242e93a",
+          "filename": "storm-core/test/clj/org/apache/storm/nimbus_test.clj",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 5,
+          "changes": 10,
+          "blob_url": "https://github.com/apache/storm/blob/47793e4214ba0ca0cdfbc2ac72bdff083bd21d7c/storm-core/test/clj/org/apache/storm/nimbus_test.clj",
+          "raw_url": "https://github.com/apache/storm/raw/47793e4214ba0ca0cdfbc2ac72bdff083bd21d7c/storm-core/test/clj/org/apache/storm/nimbus_test.clj",
+          "contents_url": "https://api.github.com/repos/apache/storm/contents/storm-core/test/clj/org/apache/storm/nimbus_test.clj?ref=47793e4214ba0ca0cdfbc2ac72bdff083bd21d7c",
+          "patch": "@@ -22,7 +22,7 @@\n             TestAggregatesCounter TestPlannerSpout TestPlannerBolt]\n            [org.apache.storm.nimbus InMemoryTopologyActionNotifier]\n            [org.apache.storm.generated GlobalStreamId]\n-           [org.apache.storm Thrift])\n+           [org.apache.storm Thrift MockAutoCred])\n   (:import [org.apache.storm.testing.staticmocking MockedZookeeper])\n   (:import [org.apache.storm.scheduler INimbus])\n   (:import [org.mockito Mockito])\n@@ -41,7 +41,7 @@\n   (:import [org.apache.commons.io FileUtils]\n            [org.json.simple JSONValue])\n   (:import [org.apache.storm.cluster StormClusterStateImpl ClusterStateContext ClusterUtils])\n-  (:use [org.apache.storm testing MockAutoCred util config log converter])\n+  (:use [org.apache.storm testing util config log converter])\n   (:use [org.apache.storm.daemon common])\n   (:require [conjure.core])\n \n@@ -316,12 +316,12 @@\n                                                                } topology submitOptions)\n           credentials (getCredentials cluster topology-name)]\n       ; check that the credentials have nimbus auto generated cred\n-      (is (= (.get credentials nimbus-cred-key) nimbus-cred-val))\n+      (is (= (.get credentials MockAutoCred/NIMBUS_CRED_KEY) MockAutoCred/NIMBUS_CRED_VAL))\n       ;advance cluster time so the renewers can execute\n       (advance-cluster-time cluster 20)\n       ;check that renewed credentials replace the original credential.\n-      (is (= (.get (getCredentials cluster topology-name) nimbus-cred-key) nimbus-cred-renew-val))\n-      (is (= (.get (getCredentials cluster topology-name) gateway-cred-key) gateway-cred-renew-val)))))\n+      (is (= (.get (getCredentials cluster topology-name) MockAutoCred/NIMBUS_CRED_KEY) MockAutoCred/NIMBUS_CRED_RENEW_VAL))\n+      (is (= (.get (getCredentials cluster topology-name) MockAutoCred/GATEWAY_CRED_KEY) MockAutoCred/GATEWAY_CRED_RENEW_VAL)))))\n \n (defmacro letlocals\n   [& body]"
+        }
+      ]
+    }
+  ],
+  "build_result": "passed"
+}

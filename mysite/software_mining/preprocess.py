@@ -2,7 +2,8 @@ import pandas as pd
 import os
 import json
 import matplotlib.pyplot as plt
-import numpy as np
+from .models import File, Commit, Build
+import uuid
 
 COMPILE_UNRELATED_FILE_TYPES = [
     'eot',
@@ -69,6 +70,8 @@ class PreProcessor:
     def __init__(self, data_root_directory):
         self.data_root_directory = data_root_directory
         self.file_name_postfix_set = set()
+        self.file_name_postfix_dir = dict()
+        self.build_ids = []
 
     def get_sub_folders(self):
         return os.listdir(self.data_root_directory)
@@ -94,6 +97,14 @@ class PreProcessor:
                     merged_object[key].append(val)
         return merged_object
 
+    @staticmethod
+    def get_filename_postfix(filename):
+        return filename.split(sep='.')[-1]
+
+    @staticmethod
+    def get_top_folder_name(filename):
+        return filename.split(sep='/')[0]
+
     def merged_object_feature_extraction(self, merged_object: dict):
         files = merged_object['files']
         # 所有commit中文件中增加的改动地方
@@ -117,14 +128,10 @@ class PreProcessor:
                 # print(file)
                 total_additions += file['additions']
                 total_deletions += file['deletions']
-                file_names = file['filename'].split(sep='.')
-                file_name_postfix = file_names[-1]
-                file_name_postfixes.add(file_name_postfix)
-                file_name_paths = file_names[0].split('/')
-                top_folder_names.add(file_name_paths[0])
-                if 'test' in file_name_paths:
-                    print(file['filename'])
-                    continue
+                filename = file['filename']
+                file_name_postfix = self.get_filename_postfix(filename)
+                top_folder_name = self.get_top_folder_name(filename)
+                top_folder_names.add(top_folder_name)
                 if file_name_postfix in COMPILE_RELATED_FILE_TYPES:
                     if file['status'] == 'modified':
                         print("Modify: ", file['filename'])
@@ -146,11 +153,140 @@ class PreProcessor:
         self.file_name_postfix_set = self.file_name_postfix_set.union(file_name_postfixes)
         return features[:4]
 
-    def view_build_failed_info(self, item):
-        for commit in item['commits']:
-            for file in commit['files']:
-                print('File name:{} additions: {} deletions {} status {}'.format(
-                    file['filename'], file['additions'], file['deletions'], file['status']))
+    def view_build_failed_info(self, sub_folder_name, filename):
+        path = os.path.join(self.data_root_directory, sub_folder_name, filename)
+        with open(path, 'r', encoding='utf-8') as f:
+            train_set = json.load(f)
+            failed_train_set = list(filter(lambda build: build['build_result'] == 'failed', train_set))
+            for item in failed_train_set:
+                print("\n Build id: %s" % (item['build_id']))
+                for commit in item['commits']:
+                    for file in commit['files']:
+                        file_name_postfix = self.get_filename_postfix(file['filename'])
+                        self.file_name_postfix_set.add(file_name_postfix)
+                        print('File name:{} additions: {} deletions {} status {}'.format(
+                            file_name_postfix, file['additions'], file['deletions'], file['status']))
+
+    def extract_project_info(self, sub_folder_name, filename):
+        path = os.path.join(self.data_root_directory, sub_folder_name, filename)
+        with open(path, 'r', encoding='utf-8') as f:
+            train_set = json.load(f)
+            with open('/Users/zhangheng/PycharmProjects/dm-software-build/detail.json', 'w') as g:
+                json.dump(train_set[1], g)
+                exit(-1)
+
+            for item in train_set:
+                self.build_ids.append(int(item['build_id']))
+
+    def view_one_build(self, sub_folder_name, filename, build_id):
+        path = os.path.join(self.data_root_directory, sub_folder_name, filename)
+        with open(path, 'r', encoding='utf-8') as f:
+            train_set = json.load(f)
+            build_item = list(filter(lambda build: build['build_id'] == build_id, train_set))[0]
+            # pre_build_item = list(filter(lambda build: build['build_id'] == str(int(build_id)-1), train_set))[0]
+            print(build_item)
+            # print(pre_build_item)
+
+    def get_parents(self):
+        pass
+
+    # def write_relation_to_db(self, sub_folder_name, file_name):
+    #     path = os.path.join(self.data_root_directory, sub_folder_name, file_name)
+    #     if not os.path.exists(path):
+    #         raise PreProcessError("Path dost not exist: %s" % path)
+    #     with open(path, 'r', encoding='utf-8') as f:
+    #         train_set = json.load(f)
+    #         for item in train_set:
+    #             build_obj = Build.objects.create(
+    #                 project_name=item['project_name'],
+    #                 build_id=item['build_id'],
+    #             )
+    #             commits = item['commits']
+    #             for commit in commits:
+    #                 commit_obj = Commit.objects.get(
+    #                     sha=commit['sha']
+    #                 )
+    #                 commit_info = commit['commit']
+    #                 status_info = commit['stats']
+    #                 assert commit_obj.additions == status_info['additions']
+    #                 assert commit_obj.deletions == status_info['deletions']
+    #                 assert commit_obj.commit_message == commit_info['message']
+    #                 # add build -> commit relation
+    #                 build_obj.commits.add(commit_obj)
+    #                 parents = commit['parents']
+    #                 # add parent relation
+    #                 for parent in parents:
+    #                     try:
+    #                         parent_commit = Commit.objects.get(sha=parent['sha'])
+    #                     except Commit.DoesNotExist:
+    #                         print('parent commit not exits: %s' % parent['sha'])
+    #                     else:
+    #                         commit_obj.parents.add(parent_commit)
+    #
+    #                 file_ids = commit_obj.file_ids.split(',')
+    #                 files = File.objects.filter(id__in=file_ids)
+    #                 assert len(file_ids) == files.count()
+    #                 for file in files:
+    #                     # add commit -> file relation
+    #                     commit_obj.files.add(file)
+    #
+    def write_data_to_db(self, sub_folder_name, file_name):
+        path = os.path.join(self.data_root_directory, sub_folder_name, file_name)
+        if not os.path.exists(path):
+            raise PreProcessError("Path dost not exist: %s" % path)
+        with open(path, 'r', encoding='utf-8') as f:
+            # build_obj_list = []
+            # commit_obj_list = []
+            # file_obj_list = []
+            train_set = json.load(f)
+            for item in train_set:
+                build_obj = Build.objects.create(
+                    project_name=item['project_name'],
+                    build_id=item['build_id'],
+                    build_result=item['build_result'],
+                )
+                # build_obj_list.append(build_obj)
+                commits = item['commits']
+                for commit in commits:
+                    if commit is None:
+                        continue
+                    commit_info = commit['commit']
+                    status_info = commit['stats']
+                    try:
+                        commit_obj = Commit.objects.get(sha=commit['sha'])
+                    except Commit.DoesNotExist:
+                        commit_obj = Commit.objects.create(
+                            sha=commit['sha'],
+                            author_name=commit_info['author']['name'],
+                            author_date=commit_info['author']['date'],
+                            committer_name=commit_info['committer']['name'],
+                            committer_date=commit_info['committer']['date'],
+                            commit_message=commit_info['message'],
+                            tree_sha=commit_info['tree']['sha'],
+                            comment_count=commit_info['comment_count'],
+                            additions=status_info['additions'],
+                            deletions=status_info['deletions'],
+
+                        )
+                    build_obj.commits.add(commit_obj)
+                    # commit_obj_list.append(commit_obj)
+                    files = commit['files']
+                    # file_ids = []
+                    for file in files:
+                        file_obj = File.objects.create(
+                            sha=file['sha'] or '',
+                            filename=file['filename'],
+                            status=file['status'],
+                            additions=file['additions'],
+                            deletions=file['deletions'],
+                            patch=file.get('patch', '')
+                        )
+                        commit_obj.files.add(file_obj)
+
+            # Build.objects.bulk_create(build_obj_list)
+            # Commit.objects.bulk_create(commit_obj_list, ignore_conflicts=True)
+            # File.objects.bulk_create(file_obj_list, ignore_conflicts=True)
+            # assert len(train_set) == Build.objects.filter(project_name=sub_folder_name).count()
 
     def handle_project(self, sub_folder_name, file_name, filter_func, preview: int = 10):
         path = os.path.join(self.data_root_directory, sub_folder_name)
@@ -170,13 +306,6 @@ class PreProcessor:
             total_failed_num = 0
             for item in filtered_train_set:
                 print("\nbuild id: ", repr(item['build_id']))
-                if item['build_id'] in ['114379271']:
-                    with open('error.json', 'w') as f:
-                        json.dump(item, f)
-                        exit(-1)
-                print("build result:", item['build_result'])
-                if item['build_result'] == 'failed':
-                    self.view_build_failed_info(item)
                 merged_object = self.merge_commits(item['commits'])
                 # 从commit中抽取特征
                 features = self.merged_object_feature_extraction(merged_object)
@@ -226,7 +355,12 @@ class PreProcessor:
 
 
 if __name__ == '__main__':
-    from software_mining.settings import DATA_ROOT_DIRECTORY
+    DATA_ROOT_DIRECTORY = '../../../ADM2019_Mining_Challenge_Dataset'
 
     processor = PreProcessor(data_root_directory=DATA_ROOT_DIRECTORY)
-    print(processor.get_sub_folders())
+    # processor.view_build_failed_info('apache_storm', 'train_set.txt')
+    # processor.extract_project_info('apache_storm', 'train_set.txt')
+    # sorted_build_ids = sorted(processor.build_ids)
+
+    # print("\n", processor.build_ids)
+    # print("\n", sorted_build_ids)

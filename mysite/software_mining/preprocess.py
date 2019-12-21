@@ -190,46 +190,28 @@ class PreProcessor:
     def get_parents(self):
         pass
 
-    # def write_relation_to_db(self, sub_folder_name, file_name):
-    #     path = os.path.join(self.data_root_directory, sub_folder_name, file_name)
-    #     if not os.path.exists(path):
-    #         raise PreProcessError("Path dost not exist: %s" % path)
-    #     with open(path, 'r', encoding='utf-8') as f:
-    #         train_set = json.load(f)
-    #         for item in train_set:
-    #             build_obj = Build.objects.create(
-    #                 project_name=item['project_name'],
-    #                 build_id=item['build_id'],
-    #             )
-    #             commits = item['commits']
-    #             for commit in commits:
-    #                 commit_obj = Commit.objects.get(
-    #                     sha=commit['sha']
-    #                 )
-    #                 commit_info = commit['commit']
-    #                 status_info = commit['stats']
-    #                 assert commit_obj.additions == status_info['additions']
-    #                 assert commit_obj.deletions == status_info['deletions']
-    #                 assert commit_obj.commit_message == commit_info['message']
-    #                 # add build -> commit relation
-    #                 build_obj.commits.add(commit_obj)
-    #                 parents = commit['parents']
-    #                 # add parent relation
-    #                 for parent in parents:
-    #                     try:
-    #                         parent_commit = Commit.objects.get(sha=parent['sha'])
-    #                     except Commit.DoesNotExist:
-    #                         print('parent commit not exits: %s' % parent['sha'])
-    #                     else:
-    #                         commit_obj.parents.add(parent_commit)
-    #
-    #                 file_ids = commit_obj.file_ids.split(',')
-    #                 files = File.objects.filter(id__in=file_ids)
-    #                 assert len(file_ids) == files.count()
-    #                 for file in files:
-    #                     # add commit -> file relation
-    #                     commit_obj.files.add(file)
-    #
+    def write_relation_to_db(self, sub_folder_name, file_name):
+        path = os.path.join(self.data_root_directory, sub_folder_name, file_name)
+        if not os.path.exists(path):
+            raise PreProcessError("Path dost not exist: %s" % path)
+        with open(path, 'r', encoding='utf-8') as f:
+            train_set = json.load(f)
+            for item in train_set:
+                commits = item['commits']
+                for commit in commits:
+                    if commit is None:
+                        continue
+                    commit_obj = Commit.objects.get(sha=commit['sha'])
+                    parents = commit['parents']
+                    # add parent relation
+                    for parent in parents:
+                        try:
+                            parent_commit = Commit.objects.get(sha=parent['sha'])
+                        except Commit.DoesNotExist:
+                            print('parent commit not exits: %s' % parent['sha'])
+                        else:
+                            commit_obj.parents.add(parent_commit)
+
     def write_data_to_db(self, sub_folder_name, file_name):
         path = os.path.join(self.data_root_directory, sub_folder_name, file_name)
         if not os.path.exists(path):
@@ -268,6 +250,7 @@ class PreProcessor:
                             deletions=status_info['deletions'],
 
                         )
+
                     build_obj.commits.add(commit_obj)
                     # commit_obj_list.append(commit_obj)
                     files = commit['files']

@@ -1,5 +1,6 @@
 from django.db import models
 import uuid
+from django.db.models import Sum, Count
 
 # Create your models here.
 
@@ -8,6 +9,8 @@ class File(models.Model):
     """
     sha只是一个文件的唯一识别码，但是一次改动中sha并不唯一，比如rename操作和revert操作导致文件sha一样，
     因而不能用sha做主键
+    src file: *.java *.rb
+    config file: *.xml *.yml
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     sha = models.CharField(max_length=100)
@@ -24,6 +27,10 @@ class File(models.Model):
                                                          self.additions,
                                                          self.status,
                                                          self.sha)
+
+    @property
+    def filename_postfix(self):
+        return self.filename.split(sep='.')[-1]
 
 
 class Commit(models.Model):
@@ -53,9 +60,22 @@ class Commit(models.Model):
 class Build(models.Model):
     project_name = models.CharField(max_length=50)
     build_id = models.CharField(max_length=20)
+    # errored, failed, passed, errored could be ignored
     build_result = models.CharField(max_length=20)
     commits = models.ManyToManyField(Commit)
     date_created = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         unique_together = ['project_name', 'build_id']
+
+    @property
+    def commit_num(self):
+        return self.commits.count()
+
+    @property
+    def total_additions(self):
+        return self.commits.aggregate(total_additions=Sum('additions'))['total_additions']
+
+    @property
+    def total_deletions(self):
+        return self.commits.aggregate(total_additions=Sum('deletions'))['total_additions']

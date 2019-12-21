@@ -30,7 +30,7 @@ class Classifier:
 
 
 if __name__ == '__main__':
-    from software_mining.settings import DATA_ROOT_DIRECTORY
+    from django.settings import DATA_ROOT_DIRECTORY
     from software_mining.preprocess import PreProcessor
     # project_name = 'abarisain_dmix'
     # project_name = 'rspec_rspec-core'

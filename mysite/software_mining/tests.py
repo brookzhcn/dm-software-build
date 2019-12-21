@@ -1,7 +1,7 @@
 from django.test import TestCase
 from .preprocess import PreProcessor
 from django.conf import settings
-
+from .models import Build
 DATA_ROOT_DIRECTORY = settings.DATA_ROOT_DIRECTORY
 
 
@@ -33,3 +33,11 @@ class PreprocessTestCase(TestCase):
                 print(str(e))
                 print(index, project_name)
                 exit(-1)
+
+
+class ModelsTestCase(TestCase):
+    def setUp(self) -> None:
+        pass
+
+    def test_describe_projects(self):
+        Build.describe_projects()

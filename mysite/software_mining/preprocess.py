@@ -2,7 +2,7 @@ import pandas as pd
 import os
 import json
 import matplotlib.pyplot as plt
-from .models import File, Commit, Build
+from software_mining.models import File, Commit, Build
 import uuid
 
 COMPILE_UNRELATED_FILE_TYPES = [
@@ -341,7 +341,7 @@ if __name__ == '__main__':
     DATA_ROOT_DIRECTORY = '../../../ADM2019_Mining_Challenge_Dataset'
 
     processor = PreProcessor(data_root_directory=DATA_ROOT_DIRECTORY)
-    # processor.view_build_failed_info('apache_storm', 'train_set.txt')
+    processor.view_build_failed_info('RailsApps_rails_apps_composer', 'train_set.txt')
     # processor.extract_project_info('apache_storm', 'train_set.txt')
     # sorted_build_ids = sorted(processor.build_ids)
 

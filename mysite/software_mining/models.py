@@ -1,7 +1,8 @@
 from django.db import models
 import uuid
 from django.db.models import Sum, Count
-
+from sklearn import tree, svm
+import numpy as pd
 # Create your models here.
 
 
@@ -57,6 +58,14 @@ class Commit(models.Model):
     date_created = models.DateTimeField(auto_now_add=True)
 
 
+class BuildManager(models.Manager):
+    """
+    ignore all errored object
+    """
+    def get_queryset(self):
+        return super().get_queryset().exclude(build_result='errored')
+
+
 class Build(models.Model):
     project_name = models.CharField(max_length=50)
     build_id = models.CharField(max_length=20)
@@ -64,6 +73,8 @@ class Build(models.Model):
     build_result = models.CharField(max_length=20)
     commits = models.ManyToManyField(Commit)
     date_created = models.DateTimeField(auto_now_add=True)
+    objects = BuildManager()
+    classifier = None
 
     class Meta:
         unique_together = ['project_name', 'build_id']
@@ -79,3 +90,75 @@ class Build(models.Model):
     @property
     def total_deletions(self):
         return self.commits.aggregate(total_additions=Sum('deletions'))['total_additions']
+
+    @classmethod
+    def get_all_projects(cls):
+        """
+        return a queryset {'project_name': 'AChep_AcDisplay', 'build_num': 201}
+        """
+        return cls.objects.values('project_name').annotate(build_num=models.Count('build_id'))
+
+    @classmethod
+    def describe_project(cls, project_name):
+        builds = cls.objects.filter(project_name=project_name)
+        failed_builds = builds.filter(build_result='failed')
+        failed_rate = failed_builds.count()/builds.count()
+        print('\n', project_name)
+        print("failed rate: ", failed_rate)
+
+    @classmethod
+    def describe_projects(cls):
+        """
+        some project has no build failed samples
+        failed : passed = 1:4
+        predicate rate should > 80%
+        """
+        total = cls.objects.count()
+        failed_num = cls.objects.filter(build_result='failed').count()
+        print("Total: ", total, "failed: ", failed_num, "failed rate: ", failed_num/total)
+        projects = cls.get_all_projects()
+        for project in projects:
+            project_name = project['project_name']
+            cls.describe_project(project_name)
+
+    @classmethod
+    def train(cls):
+        x = []
+        y = []
+        for item in cls.objects.all()[:1000]:
+            assert isinstance(item, Build)
+            features = pd.sqrt([item.commit_num, item.total_deletions, item.total_additions])
+            x.append(
+                [
+                    # item.project_name,
+                    *features
+                ]
+            )
+            y.append(item.build_result)
+        clf = tree.DecisionTreeClassifier(max_depth=15)
+        clf.fit(x, y)
+
+        cls.classifier = clf
+
+    @classmethod
+    def test(cls):
+        x = []
+        y = []
+        error_num = 0
+        for item in cls.objects.all()[1000:2000]:
+            assert isinstance(item, Build)
+            features = pd.sqrt([item.commit_num, item.total_deletions, item.total_additions])
+            x.append(
+                [
+                    # item.project_name,
+                    *features
+                ]
+            )
+            y.append(item.build_result)
+
+        predict_y = cls.classifier.predict(x)
+        for y1, y2 in zip(y, predict_y):
+            if y1 != y2:
+                error_num += 1
+        print(error_num/1000)
+

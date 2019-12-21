@@ -47,8 +47,6 @@ class Commit(models.Model):
     deletions = models.PositiveSmallIntegerField()
 
     files = models.ManyToManyField(File)
-    # help fix relations
-    file_ids = models.TextField(blank=True)
     date_created = models.DateTimeField(auto_now_add=True)
 
 

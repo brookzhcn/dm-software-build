@@ -188,6 +188,18 @@ class Build(models.Model):
     def __str__(self):
         return '%s %s %s' % (self.project_name, self.build_id, self.build_result)
 
+    def get_committer_num(self):
+        return self.commits.values('committer_name').annotate(c=models.Count('sha'))
+
+    def get_fail_rate_recently(self, limit=10):
+        all_build = Build.objects.filter(project_name=self.project_name,
+                                         date_created__lt=self.date_created).order_by('-date_created')[:limit]
+        all_build_num = len(all_build)
+        if all_build_num == 0:
+            return 0
+        fail_build = filter(lambda b: b.build_result == 'failed', all_build)
+        return len(list(fail_build))/all_build_num
+
     def alloc_score(self):
         update_objects = []
         commits = self.commits.all()

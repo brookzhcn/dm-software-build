@@ -6,7 +6,7 @@ import numpy as np
 from sklearn.preprocessing import OneHotEncoder, LabelEncoder, StandardScaler
 from django.db.models import Q
 from sklearn.model_selection import train_test_split
-
+import datetime
 
 # Create your models here.
 
@@ -202,6 +202,8 @@ class Build(models.Model):
     build_id = models.CharField(max_length=20)
     # errored, failed, passed, errored could be ignored
     build_result = models.CharField(max_length=20)
+    commit_num = models.PositiveIntegerField(default=0)
+    fail_rate_recently = models.FloatField(null=True, blank=True)
     # relate name is build_set
     commits = models.ManyToManyField(Commit)
     date_created = models.DateTimeField(auto_now_add=True)
@@ -217,10 +219,7 @@ class Build(models.Model):
     def __str__(self):
         return '%s %s %s' % (self.project_name, self.build_id, self.build_result)
 
-    def get_committer_num(self):
-        return self.commits.values('committer_name').annotate(c=models.Count('sha'))
-
-    def get_fail_rate_recently(self, limit=10):
+    def get_fail_rate_recently(self, limit=5):
         all_build = Build.objects.filter(project_name=self.project_name,
                                          date_created__lt=self.date_created).order_by('-date_created')[:limit]
         all_build_num = len(all_build)
@@ -268,9 +267,13 @@ class Build(models.Model):
         except IndexError:
             return None
 
-    @property
-    def commit_num(self):
-        return self.commits.count()
+    @classmethod
+    def update_commit_num_and_fail_rate(cls):
+        for obj in cls.objects.all():
+            print(obj.pk)
+            obj.commit_num = obj.commits.count()
+            obj.fail_rate_recently = obj.get_fail_rate_recently()
+            obj.save(update_fields=['commit_num', 'fail_rate_recently'])
 
     @property
     def total_additions(self):
@@ -352,32 +355,30 @@ class Build(models.Model):
         print(error_num / 10000)
 
     @classmethod
-    def train_lr(cls, limit=10000):
+    def train_lr(cls, limit=1000):
         # https://www.jianshu.com/p/e51e92a01a9c
         # C=1.0 : C为正则化系数λ的倒数，必须为正数，默认为1。和SVM中的C一样，值越小，代表正则化越强。
         from sklearn.linear_model import LogisticRegression
         # 先关注只有一次build的模型
         x = []
         y = []
-        for build in cls.objects.all()[:limit]:
-            commits = build.commits.all()
-            if commits.count() == 1:
-                c = commits.get()
-                x.append([build.get_fail_rate_recently(), *list(c.get_features())])
-                label = 1 if build.build_result == 'passed' else 0
-                y.append(label)
+        print("Start to prepare date ...", datetime.datetime.now())
+        for build in cls.objects.filter(commit_num=1)[:limit]:
+            c = build.commits.get()
+            x.append([build.fail_rate_recently, *list(c.get_features())])
+            label = 1 if build.build_result == 'passed' else 0
+            y.append(label)
         X_train, X_test, Y_train, Y_test = train_test_split(x, y, test_size=0.3, random_state=0)
         sc = StandardScaler().fit(X_train)
         X_train_std = sc.transform(X_train)
         X_test_std = sc.transform(X_test)
         lr = LogisticRegression(C=1000.0, random_state=0)
-        print("Start to fit...")
+        print("Start to fit...", datetime.datetime.now())
         lr.fit(X_train_std, Y_train)
+        print("start to predict", datetime.datetime.now())
         pred_test = lr.predict_proba(X_test_std)
         acc = lr.score(X_test_std, Y_test)
-        print('score: %s' % acc)
+        print('score: %s' % acc, datetime.datetime.now())
         print(pred_test, Y_test)
         cls.classifier = lr
 
-    def get_features(self):
-        return self.commit_num, self.total_additions, self.total_additions, self.get_fail_rate_recently(),

@@ -237,7 +237,9 @@ class PreProcessor:
                     try:
                         commit_obj = Commit.objects.get(sha=commit['sha'])
                     except Commit.DoesNotExist:
+                        # print(status_info)
                         commit_obj = Commit.objects.create(
+                            project_name=item['project_name'],
                             sha=commit['sha'],
                             author_name=commit_info['author']['name'],
                             author_date=commit_info['author']['date'],
@@ -257,6 +259,7 @@ class PreProcessor:
                     # file_ids = []
                     for file in files:
                         file_obj = File.objects.create(
+                            project_name=item['project_name'],
                             sha=file['sha'] or '',
                             filename=file['filename'],
                             status=file['status'],

@@ -2,7 +2,7 @@ import pandas as pd
 import os
 import json
 import matplotlib.pyplot as plt
-from software_mining.models import File, Commit, Build
+from software_mining.models import Project, Commit, Build
 import uuid
 
 COMPILE_UNRELATED_FILE_TYPES = [
@@ -212,65 +212,101 @@ class PreProcessor:
                         else:
                             commit_obj.parents.add(parent_commit)
 
-    def write_data_to_db(self, sub_folder_name, file_name):
+    def write_data_to_db(self, sub_folder_name, file_name='train_set.txt'):
         path = os.path.join(self.data_root_directory, sub_folder_name, file_name)
         if not os.path.exists(path):
             raise PreProcessError("Path dost not exist: %s" % path)
+
+        project, _ = Project.objects.get_or_create(name=sub_folder_name)
+        if project.data_sync:
+            print('data sync already')
+            return
+        print('sync date for ', sub_folder_name)
+        c_num = Commit.objects.filter(project_name=sub_folder_name).delete()
+        b_num = Build.objects.filter(project_name=sub_folder_name).delete()
+        print("clear data:", c_num, b_num)
+
+        def check_file_type(filename):
+            config_types = [
+                '.yml',
+                '.xml',
+                '.properties',
+                '.json',
+                '.config',
+                '.yaml',
+                '.conf'
+            ]
+            src_types = [
+                '.java',
+                '.rb',
+            ]
+            if not filename:
+                return 'others'
+            for c in src_types:
+                if filename.endswith(c):
+                    return 'src'
+            for c in config_types:
+                if filename.endswith(c):
+                    return 'conf'
+            return 'others'
+
         with open(path, 'r', encoding='utf-8') as f:
-            # build_obj_list = []
-            # commit_obj_list = []
-            # file_obj_list = []
+            build_obj_list = []
+            commit_obj_list = []
+            # committer_obj_list = []
             train_set = json.load(f)
-            for item in train_set:
-                build_obj = Build.objects.create(
+            valid_train_set = list(filter(lambda build: build['build_result'] in ['passed', 'failed'], train_set))
+
+            for index, item in enumerate(valid_train_set):
+                # filter None
+                commits = list(filter(lambda x: x, item['commits']))
+                build_obj = Build(
                     project_name=item['project_name'],
                     build_id=item['build_id'],
+                    build_order=index,
+                    commit_num=len(commits),
                     build_result=item['build_result'],
+                    commits=[c['sha'] for c in commits]
                 )
-                # build_obj_list.append(build_obj)
-                commits = item['commits']
-                for commit in commits:
-                    if commit is None:
-                        continue
+                build_obj_list.append(build_obj)
+
+                for commit_order, commit in enumerate(commits):
                     commit_info = commit['commit']
                     status_info = commit['stats']
-                    try:
-                        commit_obj = Commit.objects.get(sha=commit['sha'])
-                    except Commit.DoesNotExist:
-                        # print(status_info)
-                        commit_obj = Commit.objects.create(
-                            project_name=item['project_name'],
-                            sha=commit['sha'],
-                            author_name=commit_info['author']['name'],
-                            author_date=commit_info['author']['date'],
-                            committer_name=commit_info['committer']['name'],
-                            committer_date=commit_info['committer']['date'],
-                            commit_message=commit_info['message'],
-                            tree_sha=commit_info['tree']['sha'],
-                            comment_count=commit_info['comment_count'],
-                            additions=status_info['additions'],
-                            deletions=status_info['deletions'],
+                    commit_obj = Commit(
+                        project_name=item['project_name'],
+                        sha=commit['sha'],
+                        commit_order=commit_order,
+                        author=commit_info['author'],
+                        committer_name=commit_info['committer']['name'],
+                        committer_date=commit_info['committer']['date'],
+                        commit_message=commit_info['message'],
+                        tree=commit_info['tree'],
+                        parents=commit['parents'],
+                        comment_count=commit_info['comment_count'],
+                        additions=status_info['additions'],
+                        deletions=status_info['deletions'],
+                        files=[
+                            {
+                                'filename': f['filename'],
+                                'sha': f['sha'],
+                                'status': f['status'],
+                                'patch_len': len(f.get('patch', '')),
+                                'additions': f.get('additions', 0),
+                                'deletions ': f.get('additions', 0),
+                                'file_type': check_file_type(f['filename'])
+                            }
+                            for f in commit['files']
+                        ]
 
-                        )
+                    )
 
-                    build_obj.commits.add(commit_obj)
-                    # commit_obj_list.append(commit_obj)
-                    files = commit['files']
-                    # file_ids = []
-                    for file in files:
-                        file_obj = File.objects.create(
-                            project_name=item['project_name'],
-                            sha=file['sha'] or '',
-                            filename=file['filename'],
-                            status=file['status'],
-                            additions=file['additions'],
-                            deletions=file['deletions'],
-                            patch=file.get('patch', '')
-                        )
-                        commit_obj.files.add(file_obj)
+                    commit_obj_list.append(commit_obj)
 
-            # Build.objects.bulk_create(build_obj_list)
-            # Commit.objects.bulk_create(commit_obj_list, ignore_conflicts=True)
+            Build.objects.bulk_create(build_obj_list, batch_size=1000)
+            Commit.objects.bulk_create(commit_obj_list, batch_size=1000, ignore_conflicts=True)
+            project.data_sync = True
+            project.save()
             # File.objects.bulk_create(file_obj_list, ignore_conflicts=True)
             # assert len(train_set) == Build.objects.filter(project_name=sub_folder_name).count()
 

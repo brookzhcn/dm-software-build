@@ -7,41 +7,43 @@ from sklearn.preprocessing import OneHotEncoder, LabelEncoder, StandardScaler
 from django.db.models import Q
 from sklearn.model_selection import train_test_split
 import datetime
-
+from django.contrib.postgres.fields import JSONField, ArrayField
 # Create your models here.
 
 
 class Committer(models.Model):
     name = models.CharField(max_length=50)
-    email = models.CharField(max_length=100, unique=True)
+    email = models.CharField(max_length=100)
     fail_rate_overall = models.FloatField(blank=True, null=True)
     fail_rate_recently = models.FloatField(blank=True, null=True)
+
+    class Meta:
+        unique_together = ('name', 'email')
 
 
 class Project(models.Model):
     name = models.CharField(max_length=50, unique=True)
     fail_rate_overall = models.FloatField(blank=True, null=True)
-    fail_rate_recently = models.FloatField(blank=True, null=True)
-    all_committer = models.ManyToManyField(Committer)
-
-    def set_fail_rate_overall(self):
-        all_build = Build.objects.filter(project_name=self.name)
-        fail_build = all_build.filter(build_result='failed')
-        self.fail_rate_overall = fail_build.count() / all_build.count()
-        self.save(update_fields=['fail_rate_overall'])
-
-    def set_fail_rate_recently(self, limit=10):
-        all_build = Build.objects.filter(project_name=self.name)[:limit]
-        fail_build = filter(lambda b: b.build_result == 'failed', all_build)
-        self.fail_rate_recently = len(list(fail_build)) / len(all_build)
-        self.save(update_fields=['fail_rate_recently'])
-
-    @classmethod
-    def update_fail_rate(cls):
-        for p in cls.objects.all():
-            print("update fail rate for %s" % p.name)
-            p.set_fail_rate_overall()
-            p.set_fail_rate_recently()
+    data_sync = models.BooleanField(default=False)
+#
+#     def set_fail_rate_overall(self):
+#         all_build = Build.objects.filter(project_name=self.name)
+#         fail_build = all_build.filter(build_result='failed')
+#         self.fail_rate_overall = fail_build.count() / all_build.count()
+#         self.save(update_fields=['fail_rate_overall'])
+#
+#     def set_fail_rate_recently(self, limit=10):
+#         all_build = Build.objects.filter(project_name=self.name)[:limit]
+#         fail_build = filter(lambda b: b.build_result == 'failed', all_build)
+#         self.fail_rate_recently = len(list(fail_build)) / len(all_build)
+#         self.save(update_fields=['fail_rate_recently'])
+#
+#     @classmethod
+#     def update_fail_rate(cls):
+#         for p in cls.objects.all():
+#             print("update fail rate for %s" % p.name)
+#             p.set_fail_rate_overall()
+#             p.set_fail_rate_recently()
 
 
 class File(models.Model):
@@ -55,7 +57,7 @@ class File(models.Model):
     project_name = models.CharField(max_length=50, blank=True, null=True)
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     sha = models.CharField(max_length=100)
-    filename = models.CharField(max_length=150)
+    filename = models.TextField()
     # status: modified:1066519, added:180298, renamed:76310, removed:75394
     status = models.CharField(max_length=20)
     additions = models.PositiveSmallIntegerField()
@@ -65,6 +67,9 @@ class File(models.Model):
     # give a score from Build -> Commit ->File
     # build failed: 4 build success: -1
     score = models.FloatField(blank=True, null=True, default=0)
+
+    class Meta:
+        abstract = True
 
     def __str__(self):
         return "%s del: %s add: %s status:%s sha: %s" % (self.filename,
@@ -116,33 +121,28 @@ class Commit(models.Model):
     sha = models.CharField(max_length=100, primary_key=True, db_index=True)
     # for query
     project_name = models.CharField(max_length=50, blank=True, null=True)
+    commit_order = models.PositiveIntegerField()
+
     # the following field extract from commit dict
-    author_name = models.CharField(max_length=50)
-    author_date = models.DateTimeField()
-
-    committer_name = models.CharField(max_length=50)
+    author = JSONField(null=True)
+    committer = JSONField(null=True)
+    # for search
+    committer_name = models.CharField(max_length=100)
     committer_date = models.DateTimeField()
-
     commit_message = models.TextField()
-
-    tree_sha = models.CharField(max_length=100)
-    comment_count = models.PositiveSmallIntegerField()
+    tree = JSONField(null=True)
+    comment_count = models.IntegerField()
     # end commit info
-
-    parents = models.ManyToManyField('self', related_name='children', symmetrical=False)
+    parents = JSONField(null=True)
     # status info
-    additions = models.PositiveSmallIntegerField()
-    deletions = models.PositiveSmallIntegerField()
-
-    files = models.ManyToManyField(File)
-    date_created = models.DateTimeField(auto_now_add=True)
-
+    additions = models.IntegerField()
+    deletions = models.IntegerField()
+    files = JSONField(null=True)
     # give a score from Build -> Commit
     # build failed: 4 build success: -1
-    score = models.FloatField(blank=True, null=True, default=0)
 
     def __str__(self):
-        return "%s %s" % (self.sha, self.committer_name)
+        return "%s %s" % (self.sha, self.committer)
 
     def get_last_commit(self):
         """
@@ -179,12 +179,12 @@ class Commit(models.Model):
         )
         src_files_info = src_files.aggregate(total_deletions=Sum('deletions'), total_additions=Sum('deletions'))
         config_files_info = config_files.aggregate(total_deletions=Sum('deletions'), total_additions=Sum('deletions'))
-        return np.sqrt([self.committer_time_elapse,
+        return [self.committer_time_elapse,
                         src_files_info['total_deletions'] or 0, src_files_info['total_additions'] or 0,
                         src_files.count(),
                         config_files_info['total_deletions'] or 0, config_files_info['total_additions'] or 0,
                         config_files.count(),
-                        ])
+                        ]
 
 
 class BuildManager(models.Manager):
@@ -200,18 +200,15 @@ class BuildManager(models.Manager):
 class Build(models.Model):
     project_name = models.CharField(max_length=50)
     build_id = models.CharField(max_length=20)
+    build_order = models.IntegerField()
     # errored, failed, passed, errored could be ignored
     build_result = models.CharField(max_length=20)
     commit_num = models.PositiveIntegerField(default=0)
     fail_rate_recently = models.FloatField(null=True, blank=True)
     # relate name is build_set
-    commits = models.ManyToManyField(Commit)
-    date_created = models.DateTimeField(auto_now_add=True)
+    commits = ArrayField(models.TextField(), blank=True)
     objects = BuildManager()
     classifier = None
-
-    FAILED_SCORE = 4
-    PASSED_SCORE = -1
 
     class Meta:
         unique_together = ['project_name', 'build_id']
@@ -228,20 +225,20 @@ class Build(models.Model):
         fail_build = filter(lambda b: b.build_result == 'failed', all_build)
         return len(list(fail_build)) / all_build_num
 
-    def alloc_score(self):
-        update_objects = []
-        commits = self.commits.all()
-        score = self.PASSED_SCORE if self.build_result == 'passed' else self.FAILED_SCORE
-        file_num_list = []
-        for commit in commits:
-            file_num = commit.files.count()
-            file_num_list.append(file_num)
-
-        total = sum(file_num_list)
-        for file_num, commit in zip(file_num_list, commits):
-            commit.score += score * file_num / total
-            update_objects.append(commit)
-        Commit.objects.bulk_update(update_objects, ['score'])
+    # def alloc_score(self):
+    #     update_objects = []
+    #     commits = self.commits.all()
+    #     score = self.PASSED_SCORE if self.build_result == 'passed' else self.FAILED_SCORE
+    #     file_num_list = []
+    #     for commit in commits:
+    #         file_num = commit.files.count()
+    #         file_num_list.append(file_num)
+    #
+    #     total = sum(file_num_list)
+    #     for file_num, commit in zip(file_num_list, commits):
+    #         commit.score += score * file_num / total
+    #         update_objects.append(commit)
+    #     Commit.objects.bulk_update(update_objects, ['score'])
 
     @classmethod
     def alloc_scores(cls, update_objects=None):

@@ -2,8 +2,12 @@ from django.db import models
 import uuid
 from django.db.models import Sum, Count
 from sklearn import tree, svm
-import numpy as pd
-from sklearn.preprocessing import OneHotEncoder, LabelEncoder
+import numpy as np
+from sklearn.preprocessing import OneHotEncoder, LabelEncoder, StandardScaler
+from django.db.models import Q
+from sklearn.model_selection import train_test_split
+
+
 # Create your models here.
 
 
@@ -23,13 +27,13 @@ class Project(models.Model):
     def set_fail_rate_overall(self):
         all_build = Build.objects.filter(project_name=self.name)
         fail_build = all_build.filter(build_result='failed')
-        self.fail_rate_overall = fail_build.count()/all_build.count()
+        self.fail_rate_overall = fail_build.count() / all_build.count()
         self.save(update_fields=['fail_rate_overall'])
 
     def set_fail_rate_recently(self, limit=10):
         all_build = Build.objects.filter(project_name=self.name)[:limit]
         fail_build = filter(lambda b: b.build_result == 'failed', all_build)
-        self.fail_rate_recently = len(list(fail_build))/len(all_build)
+        self.fail_rate_recently = len(list(fail_build)) / len(all_build)
         self.save(update_fields=['fail_rate_recently'])
 
     @classmethod
@@ -158,12 +162,37 @@ class Commit(models.Model):
             return (self.committer_date - last_commit.committer_date).days
         return 0
 
+    def get_features(self):
+        src_files = self.files.filter(
+            Q(filename__endswith='.java') |
+            Q(filename__endswith='.rb')
+        )
+        config_files = self.files.filter(
+            Q(filename__endswith='.yml') |
+            Q(filename__endswith='.xml') |
+            Q(filename__endswith='.conf') |
+            Q(filename__endswith='.properties') |
+            Q(filename__endswith='.json') |
+            Q(filename__endswith='.yaml') |
+            Q(filename__endswith='.config')
+
+        )
+        src_files_info = src_files.aggregate(total_deletions=Sum('deletions'), total_additions=Sum('deletions'))
+        config_files_info = config_files.aggregate(total_deletions=Sum('deletions'), total_additions=Sum('deletions'))
+        return np.sqrt([self.committer_time_elapse,
+                        src_files_info['total_deletions'] or 0, src_files_info['total_additions'] or 0,
+                        src_files.count(),
+                        config_files_info['total_deletions'] or 0, config_files_info['total_additions'] or 0,
+                        config_files.count(),
+                        ])
+
 
 class BuildManager(models.Manager):
     """
     ignore all errored object
     if commit is None, then see the last build or output passed
     """
+
     def get_queryset(self):
         return super().get_queryset().exclude(build_result='errored').exclude(commits=None)
 
@@ -198,7 +227,7 @@ class Build(models.Model):
         if all_build_num == 0:
             return 0
         fail_build = filter(lambda b: b.build_result == 'failed', all_build)
-        return len(list(fail_build))/all_build_num
+        return len(list(fail_build)) / all_build_num
 
     def alloc_score(self):
         update_objects = []
@@ -211,7 +240,7 @@ class Build(models.Model):
 
         total = sum(file_num_list)
         for file_num, commit in zip(file_num_list, commits):
-            commit.score += score * file_num/total
+            commit.score += score * file_num / total
             update_objects.append(commit)
         Commit.objects.bulk_update(update_objects, ['score'])
 
@@ -262,7 +291,7 @@ class Build(models.Model):
     def describe_project(cls, project_name):
         builds = cls.objects.filter(project_name=project_name)
         failed_builds = builds.filter(build_result='failed')
-        failed_rate = failed_builds.count()/builds.count()
+        failed_rate = failed_builds.count() / builds.count()
         print('\n', project_name)
         print("failed rate: ", failed_rate)
 
@@ -275,7 +304,7 @@ class Build(models.Model):
         """
         total = cls.objects.count()
         failed_num = cls.objects.filter(build_result='failed').count()
-        print("Total: ", total, "failed: ", failed_num, "failed rate: ", failed_num/total)
+        print("Total: ", total, "failed: ", failed_num, "failed rate: ", failed_num / total)
         projects = cls.get_all_projects()
         for project in projects:
             project_name = project['project_name']
@@ -287,7 +316,7 @@ class Build(models.Model):
         y = []
         for item in cls.objects.all()[:10000]:
             assert isinstance(item, Build)
-            features = pd.sqrt([item.commit_num, item.total_deletions, item.total_additions])
+            features = np.sqrt([item.commit_num, item.total_deletions, item.total_additions])
             x.append(
                 [
                     # item.project_name,
@@ -307,7 +336,7 @@ class Build(models.Model):
         error_num = 0
         for item in cls.objects.all()[10000:20000]:
             assert isinstance(item, Build)
-            features = pd.sqrt([item.commit_num, item.total_deletions, item.total_additions])
+            features = np.sqrt([item.commit_num, item.total_deletions, item.total_additions])
             x.append(
                 [
                     # item.project_name,
@@ -320,5 +349,35 @@ class Build(models.Model):
         for y1, y2 in zip(y, predict_y):
             if y1 != y2:
                 error_num += 1
-        print(error_num/10000)
+        print(error_num / 10000)
 
+    @classmethod
+    def train_lr(cls, limit=10000):
+        # https://www.jianshu.com/p/e51e92a01a9c
+        # C=1.0 : C为正则化系数λ的倒数，必须为正数，默认为1。和SVM中的C一样，值越小，代表正则化越强。
+        from sklearn.linear_model import LogisticRegression
+        # 先关注只有一次build的模型
+        x = []
+        y = []
+        for build in cls.objects.all()[:limit]:
+            commits = build.commits.all()
+            if commits.count() == 1:
+                c = commits.get()
+                x.append([build.get_fail_rate_recently(), *list(c.get_features())])
+                label = 1 if build.build_result == 'passed' else 0
+                y.append(label)
+        X_train, X_test, Y_train, Y_test = train_test_split(x, y, test_size=0.3, random_state=0)
+        sc = StandardScaler().fit(X_train)
+        X_train_std = sc.transform(X_train)
+        X_test_std = sc.transform(X_test)
+        lr = LogisticRegression(C=1000.0, random_state=0)
+        print("Start to fit...")
+        lr.fit(X_train_std, Y_train)
+        pred_test = lr.predict_proba(X_test_std)
+        acc = lr.score(X_test_std, Y_test)
+        print('score: %s' % acc)
+        print(pred_test, Y_test)
+        cls.classifier = lr
+
+    def get_features(self):
+        return self.commit_num, self.total_additions, self.total_additions, self.get_fail_rate_recently(),

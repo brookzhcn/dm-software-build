@@ -7,6 +7,39 @@ from sklearn.preprocessing import OneHotEncoder, LabelEncoder
 # Create your models here.
 
 
+class Committer(models.Model):
+    name = models.CharField(max_length=50)
+    email = models.CharField(max_length=100, unique=True)
+    fail_rate_overall = models.FloatField(blank=True, null=True)
+    fail_rate_recently = models.FloatField(blank=True, null=True)
+
+
+class Project(models.Model):
+    name = models.CharField(max_length=50, unique=True)
+    fail_rate_overall = models.FloatField(blank=True, null=True)
+    fail_rate_recently = models.FloatField(blank=True, null=True)
+    all_committer = models.ManyToManyField(Committer)
+
+    def set_fail_rate_overall(self):
+        all_build = Build.objects.filter(project_name=self.name)
+        fail_build = all_build.filter(build_result='failed')
+        self.fail_rate_overall = fail_build.count()/all_build.count()
+        self.save(update_fields=['fail_rate_overall'])
+
+    def set_fail_rate_recently(self, limit=10):
+        all_build = Build.objects.filter(project_name=self.name)[:limit]
+        fail_build = filter(lambda b: b.build_result == 'failed', all_build)
+        self.fail_rate_recently = len(list(fail_build))/len(all_build)
+        self.save(update_fields=['fail_rate_recently'])
+
+    @classmethod
+    def update_fail_rate(cls):
+        for p in cls.objects.all():
+            print("update fail rate for %s" % p.name)
+            p.set_fail_rate_overall()
+            p.set_fail_rate_recently()
+
+
 class File(models.Model):
     """
     sha只是一个文件的唯一识别码，但是一次改动中sha并不唯一，比如rename操作和revert操作导致文件sha一样，
@@ -112,10 +145,18 @@ class Commit(models.Model):
         获取上次Commit 信息
         """
         try:
-            return Commit.objects.filter(date_created__lt=self.date_created,
-                                         project_name=self.project_name).order_by('-date_created')[0]
+            return Commit.objects.filter(committer_date__lt=self.committer_date,
+                                         committer_name=self.committer_name,
+                                         project_name=self.project_name).order_by('-committer_date')[0]
         except IndexError:
-            return None
+            return
+
+    @property
+    def committer_time_elapse(self):
+        last_commit = self.get_last_commit()
+        if last_commit:
+            return (self.committer_date - last_commit.committer_date).days
+        return 0
 
 
 class BuildManager(models.Manager):
@@ -148,6 +189,7 @@ class Build(models.Model):
         return '%s %s %s' % (self.project_name, self.build_id, self.build_result)
 
     def alloc_score(self):
+        update_objects = []
         commits = self.commits.all()
         score = self.PASSED_SCORE if self.build_result == 'passed' else self.FAILED_SCORE
         file_num_list = []
@@ -158,7 +200,22 @@ class Build(models.Model):
         total = sum(file_num_list)
         for file_num, commit in zip(file_num_list, commits):
             commit.score += score * file_num/total
-            commit.save(update_fields=['score'])
+            update_objects.append(commit)
+        Commit.objects.bulk_update(update_objects, ['score'])
+
+    @classmethod
+    def alloc_scores(cls, update_objects=None):
+        if update_objects is None:
+            update_objects = cls.objects.all()
+
+        for b in update_objects:
+            b.alloc_score()
+
+    @classmethod
+    def alloc_score_for_specific_project(cls, project_name):
+        update_objects = cls.objects.filter(project_name=project_name)
+        print("allocate score for project name %s, total builds: %s" % (project_name, update_objects.count()))
+        cls.alloc_scores(update_objects=update_objects)
 
     def get_last_build(self):
         """

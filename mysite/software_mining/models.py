@@ -1,14 +1,17 @@
 from django.db import models
 import uuid
-from django.db.models import Sum, Count
+from django.db.models import Sum, Count, Max
 from sklearn import tree, svm
 import numpy as np
-from sklearn.preprocessing import OneHotEncoder, LabelEncoder, StandardScaler
+from sklearn.preprocessing import OneHotEncoder, LabelEncoder, StandardScaler, MinMaxScaler
 from django.db.models import Q
+import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 import datetime
 from django.contrib.postgres.fields import JSONField, ArrayField
 # Create your models here.
+from imblearn.over_sampling import RandomOverSampler
+from imblearn.under_sampling import RandomUnderSampler
 
 
 class Committer(models.Model):
@@ -138,6 +141,7 @@ class Commit(models.Model):
     additions = models.IntegerField()
     deletions = models.IntegerField()
     files = JSONField(null=True)
+    compute_features = ArrayField(models.FloatField(null=True), null=True)
     # give a score from Build -> Commit
     # build failed: 4 build success: -1
 
@@ -151,7 +155,7 @@ class Commit(models.Model):
         try:
             return Commit.objects.filter(committer_date__lt=self.committer_date,
                                          committer_name=self.committer_name,
-                                         project_name=self.project_name).order_by('-committer_date')[0]
+                                         project_name=self.project_name).order_by('-commit_order')[0]
         except IndexError:
             return
 
@@ -162,29 +166,49 @@ class Commit(models.Model):
             return (self.committer_date - last_commit.committer_date).days
         return 0
 
-    def get_features(self):
-        src_files = self.files.filter(
-            Q(filename__endswith='.java') |
-            Q(filename__endswith='.rb')
-        )
-        config_files = self.files.filter(
-            Q(filename__endswith='.yml') |
-            Q(filename__endswith='.xml') |
-            Q(filename__endswith='.conf') |
-            Q(filename__endswith='.properties') |
-            Q(filename__endswith='.json') |
-            Q(filename__endswith='.yaml') |
-            Q(filename__endswith='.config')
+    def get_features(self, date_set=False):
+        if self.compute_features:
+            return self.compute_features
+        src_total_deletions = 0
+        src_total_additions = 0
+        src_file_num = 0
 
-        )
-        src_files_info = src_files.aggregate(total_deletions=Sum('deletions'), total_additions=Sum('deletions'))
-        config_files_info = config_files.aggregate(total_deletions=Sum('deletions'), total_additions=Sum('deletions'))
-        return [self.committer_time_elapse,
-                        src_files_info['total_deletions'] or 0, src_files_info['total_additions'] or 0,
-                        src_files.count(),
-                        config_files_info['total_deletions'] or 0, config_files_info['total_additions'] or 0,
-                        config_files.count(),
-                        ]
+        conf_total_deletions = 0
+        conf_total_additions = 0
+        conf_file_num = 0
+
+        patch_len = 0
+        committer_time_elapse = self.committer_time_elapse
+        files = self.files
+
+        if files:
+            for f in files:
+                file_type = f['file_type']
+                if file_type == 'src':
+                    src_total_additions += f['additions']
+                    src_total_deletions += f['deletions ']
+                    src_file_num += 1
+                    patch_len += f['patch_len']
+                elif file_type == 'conf':
+                    conf_total_additions += f['additions']
+                    conf_total_deletions += f['deletions ']
+                    conf_file_num += 1
+                    patch_len += f['patch_len']
+
+        features = [
+            src_total_deletions,
+            src_total_additions,
+            src_file_num,
+            conf_total_deletions,
+            conf_total_additions,
+            conf_file_num,
+            patch_len,
+            committer_time_elapse
+        ]
+        if date_set:
+            self.compute_features = features
+            self.save(update_fields=['compute_features'])
+        return features
 
 
 class BuildManager(models.Manager):
@@ -207,7 +231,7 @@ class Build(models.Model):
     fail_rate_recently = models.FloatField(null=True, blank=True)
     # relate name is build_set
     commits = ArrayField(models.TextField(), blank=True)
-    objects = BuildManager()
+    # objects = BuildManager()
     classifier = None
 
     class Meta:
@@ -216,53 +240,21 @@ class Build(models.Model):
     def __str__(self):
         return '%s %s %s' % (self.project_name, self.build_id, self.build_result)
 
+    def get_last_build(self):
+        try:
+            return Build.objects.get(build_order=self.build_order-1, project_name=self.project_name)
+        except Build.DoesNotExist:
+            return
+
     def get_fail_rate_recently(self, limit=5):
+        build_order = self.build_order
         all_build = Build.objects.filter(project_name=self.project_name,
-                                         date_created__lt=self.date_created).order_by('-date_created')[:limit]
+                                         build_order__lt=build_order).order_by('-build_order')[:limit]
         all_build_num = len(all_build)
         if all_build_num == 0:
             return 0
         fail_build = filter(lambda b: b.build_result == 'failed', all_build)
         return len(list(fail_build)) / all_build_num
-
-    # def alloc_score(self):
-    #     update_objects = []
-    #     commits = self.commits.all()
-    #     score = self.PASSED_SCORE if self.build_result == 'passed' else self.FAILED_SCORE
-    #     file_num_list = []
-    #     for commit in commits:
-    #         file_num = commit.files.count()
-    #         file_num_list.append(file_num)
-    #
-    #     total = sum(file_num_list)
-    #     for file_num, commit in zip(file_num_list, commits):
-    #         commit.score += score * file_num / total
-    #         update_objects.append(commit)
-    #     Commit.objects.bulk_update(update_objects, ['score'])
-
-    @classmethod
-    def alloc_scores(cls, update_objects=None):
-        if update_objects is None:
-            update_objects = cls.objects.all()
-
-        for b in update_objects:
-            b.alloc_score()
-
-    @classmethod
-    def alloc_score_for_specific_project(cls, project_name):
-        update_objects = cls.objects.filter(project_name=project_name)
-        print("allocate score for project name %s, total builds: %s" % (project_name, update_objects.count()))
-        cls.alloc_scores(update_objects=update_objects)
-
-    def get_last_build(self):
-        """
-        获取上次build 信息
-        """
-        try:
-            return Build.objects.filter(date_created__lt=self.date_created,
-                                        project_name=self.project_name).order_by('-date_created')[0]
-        except IndexError:
-            return None
 
     @classmethod
     def update_commit_num_and_fail_rate(cls):
@@ -352,26 +344,67 @@ class Build(models.Model):
         print(error_num / 10000)
 
     @classmethod
-    def train_lr(cls, limit=1000):
+    def get_success_rate_by_commit_num(cls, commit_num):
+        total = cls.objects.filter(commit_num=commit_num)
+        if total.count() > 10:
+            return total.filter(build_result='passed').count() / total.count()
+        return
+
+    @classmethod
+    def plot_success_rate_vs_commit_num(cls):
+        x = []
+        y = []
+        m = Build.objects.aggregate(max=Max('commit_num'))['max']
+        for num in range(1, m+1):
+            success_rate = cls.get_success_rate_by_commit_num(num)
+            if success_rate is not None:
+                print(num, success_rate)
+                x.append(num)
+                y.append(success_rate)
+        return x, y
+
+    @classmethod
+    def train_lr(cls, project_name=None, limit=3000):
+        first_builds = Build.objects.filter(build_order=0)
+        first_build_success = first_builds.filter(build_result='passed').count()/ first_builds.count()
+
         # https://www.jianshu.com/p/e51e92a01a9c
         # C=1.0 : C为正则化系数λ的倒数，必须为正数，默认为1。和SVM中的C一样，值越小，代表正则化越强。
         from sklearn.linear_model import LogisticRegression
         # 先关注只有一次build的模型
         x = []
         y = []
-        print("Start to prepare date ...", datetime.datetime.now())
-        for build in cls.objects.filter(commit_num=1)[:limit]:
-            c = build.commits.get()
-            x.append([build.fail_rate_recently, *list(c.get_features())])
+        if project_name is not None:
+            total_builds = Build.objects.filter(project_name=project_name, commit_num=1)
+        else:
+            total_builds = cls.objects.filter(commit_num=1)[:limit]
+        print("Start to prepare data ...", datetime.datetime.now())
+        for build in total_builds:
+            c = Commit.objects.get(sha=build.commits[0])
+            last_build = build.get_last_build()
+            if last_build is None:
+                last_build_success = first_build_success
+            elif last_build.build_result == 'passed':
+                last_build_success = 1
+            else:
+                last_build_success = 0
+
+            x.append([last_build_success, *list(c.get_features(date_set=True))])
             label = 1 if build.build_result == 'passed' else 0
             y.append(label)
         X_train, X_test, Y_train, Y_test = train_test_split(x, y, test_size=0.3, random_state=0)
-        sc = StandardScaler().fit(X_train)
-        X_train_std = sc.transform(X_train)
-        X_test_std = sc.transform(X_test)
+        sc = MinMaxScaler(feature_range=(0, 1))
+        X_train_std = sc.fit_transform(X_train)
+        X_test_std = sc.fit_transform(X_test)
         lr = LogisticRegression(C=1000.0, random_state=0)
+        ros = RandomOverSampler(random_state=0)
+        # X_resampled, y_resampled = ros.fit_sample(X_train_std, Y_train)
+        # rus = RandomUnderSampler(random_state=0)
+
+        # X_resampled, y_resampled = rus.fit_sample(X_train_std, Y_train)
         print("Start to fit...", datetime.datetime.now())
         lr.fit(X_train_std, Y_train)
+        # lr.fit(X_resampled, y_resampled)
         print("start to predict", datetime.datetime.now())
         pred_test = lr.predict_proba(X_test_std)
         acc = lr.score(X_test_std, Y_test)

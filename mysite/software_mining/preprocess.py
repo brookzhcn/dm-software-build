@@ -293,7 +293,7 @@ class PreProcessor:
                                 'status': f['status'],
                                 'patch_len': len(f.get('patch', '')),
                                 'additions': f.get('additions', 0),
-                                'deletions ': f.get('additions', 0),
+                                'deletions': f.get('additions', 0),
                                 'file_type': check_file_type(f['filename'])
                             }
                             for f in commit['files']

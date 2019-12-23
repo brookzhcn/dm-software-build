@@ -166,9 +166,7 @@ class Commit(models.Model):
             return (self.committer_date - last_commit.committer_date).days
         return 0
 
-    def get_features(self, date_set=False):
-        if self.compute_features:
-            return self.compute_features
+    def get_features(self):
         src_total_deletions = 0
         src_total_additions = 0
         src_file_num = 0
@@ -205,10 +203,19 @@ class Commit(models.Model):
             patch_len,
             committer_time_elapse
         ]
-        if date_set:
-            self.compute_features = features
-            self.save(update_fields=['compute_features'])
+        # if date_set:
+        #     self.compute_features = features
+        #     self.save(update_fields=['compute_features'])
         return features
+
+    @classmethod
+    def update_features(cls):
+        update_objects = []
+        objs = cls.objects.filter(compute_features=None)
+        for obj in objs:
+            obj.compute_features = obj.get_features()
+            update_objects.append(obj)
+        Commit.objects.bulk_update(update_objects, fields=['compute_features'], batch_size=10000)
 
 
 class BuildManager(models.Manager):

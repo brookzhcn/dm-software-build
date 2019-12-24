@@ -17,7 +17,9 @@ from django.contrib.postgres.fields import JSONField, ArrayField
 from imblearn.over_sampling import RandomOverSampler
 from imblearn.under_sampling import RandomUnderSampler
 from django.conf import settings
-
+# https://www.jianshu.com/p/e51e92a01a9c
+# C=1.0 : C为正则化系数λ的倒数，必须为正数，默认为1。和SVM中的C一样，值越小，代表正则化越强。
+from sklearn.linear_model import LogisticRegression
 
 def check_file_type(filename):
     config_types = [
@@ -523,9 +525,7 @@ class Build(models.Model):
         first_builds = Build.objects.filter(build_order=0)
         first_build_success = first_builds.filter(build_result='passed').count() / first_builds.count()
 
-        # https://www.jianshu.com/p/e51e92a01a9c
-        # C=1.0 : C为正则化系数λ的倒数，必须为正数，默认为1。和SVM中的C一样，值越小，代表正则化越强。
-        from sklearn.linear_model import LogisticRegression
+
         # 先关注只有一次build的模型
         x = []
         y = []
@@ -615,6 +615,23 @@ class TrainData(models.Model):
     predict_result = models.FloatField(null=True, blank=True)
 
     classifier = None
+    multi_classifier = None
+    selected_features = (
+        # 'comment_count',
+        # 'build_order',
+        'feature_1',
+        'feature_2',
+        'feature_3',
+        'feature_4',
+        'feature_5',
+        'feature_6',
+        'feature_7',
+        'feature_8',
+        'feature_9',
+        'feature_11',
+        'feature_12',
+        'feature_13',
+    )
 
     @classmethod
     def train_lr(cls, project_names=None, limit=None, commit_num=1):
@@ -641,19 +658,7 @@ class TrainData(models.Model):
             'project_name',
             'build_result',
             'last_build_result',
-            # 'comment_count',
-            'feature_1',
-            'feature_2',
-            'feature_3',
-            'feature_4',
-            'feature_5',
-            'feature_6',
-            'feature_7',
-            'feature_8',
-            'feature_9',
-            'feature_11',
-            'feature_12',
-            'feature_13',
+            *cls.selected_features
         )
         if limit is not None:
             total_commits = total_commits[:limit]
@@ -667,25 +672,25 @@ class TrainData(models.Model):
             X.append([last_build, p, *features])
 
         # X = preprocessing.normalize(X)
-        X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.5, random_state=42)
+        X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.3, random_state=42)
         X_train_std = X_train
         X_test_std = X_test
         # sc = MinMaxScaler(feature_range=(0, 1))
         # X_train_std = sc.fit_transform(X_train)
         # X_test_std = sc.fit_transform(X_test)
         lr = LogisticRegression(C=10.0, random_state=0)
-        # ros = RandomOverSampler(random_state=42, weights=[0.5, 0.5])
-        # X_train_std, Y_train = ros.fit_sample(X_train_std, Y_train)
-        rus = RandomUnderSampler(random_state=42,)
+        ros = RandomOverSampler(random_state=42)
+        X_train_std, Y_train = ros.fit_sample(X_train_std, Y_train)
+        # rus = RandomUnderSampler(random_state=42,)
 
-        X_train_std, Y_train = rus.fit_sample(X_train_std, Y_train)
+        # X_train_std, Y_train = rus.fit_sample(X_train_std, Y_train)
         print("Start to fit...", datetime.datetime.now())
         rfe = RFE(lr, 5)
         rfe = rfe.fit(X_train_std, Y_train)
         lr.fit(X_train_std, Y_train)
         # lr.fit(X_resampled, y_resampled)
         print("start to predict", datetime.datetime.now())
-        pred_test_prob = lr.predict_proba(X_test_std)
+        # pred_test_prob = lr.predict_proba(X_test_std)
         pred_test = lr.predict(X_test_std)
 
         acc = lr.score(X_test_std, Y_test)
@@ -693,5 +698,69 @@ class TrainData(models.Model):
         print('score: %s' % acc, datetime.datetime.now())
         print(report)
         cls.classifier = lr
+        print(rfe.support_)
+        print(rfe.ranking_)
+
+    @classmethod
+    def train_multiple(cls):
+        total_commits = cls.objects.filter(commit_num__gt=1).exclude(last_build_result=None).values_list(
+            'project_name',
+            'build_id',
+            'build_result',
+            'last_build_result',
+            *cls.selected_features
+        )
+        fail_rate_dict = {}
+        for p in Project.objects.all():
+            fail_rate_dict[p.name] = p.fail_rate_overall
+        X = []
+        Y = []
+        build_dict = {}
+        for index, item in enumerate(total_commits):
+            project_name, build_id, label, last_build, *features = item
+            build_key = project_name + '|' + build_id
+            if build_key not in build_dict:
+                build_dict[build_key] = {
+                    'X': [index]
+                }
+            else:
+                build_dict[build_key]['X'].append(index)
+
+            build_dict[build_key]['Y'] = label
+
+            last_build = 1 if last_build == 'passed' else 0
+            p = fail_rate_dict[project_name]
+            features = np.log(np.add(features, [1] * len(features)))
+            X.append([last_build, p, *features])
+        proba = cls.classifier.predict_proba(X)
+        mutilple_X = []
+        for k, v in build_dict.items():
+            proba_list = []
+            for index in v['X']:
+                d = proba[index][1]
+                proba_list.append(d)
+            mutilple_X.append(proba_list)
+            Y.append(v['Y'])
+        mutilple_X = list(map(lambda d: [np.mean(d), np.min(d), np.max(d), len(d)], mutilple_X))
+        X_train, X_test, Y_train, Y_test = train_test_split(mutilple_X, Y, test_size=0.3, random_state=42)
+        lr = LogisticRegression(C=10.0, random_state=0)
+        ros = RandomOverSampler(random_state=42)
+        # X_train, Y_train = ros.fit_sample(X_train, Y_train)
+        # rus = RandomUnderSampler(random_state=42,)
+
+        # X_train_std, Y_train = rus.fit_sample(X_train_std, Y_train)
+        print("Start to fit...", datetime.datetime.now())
+        rfe = RFE(lr, 2)
+        rfe = rfe.fit(X_train, Y_train)
+        lr.fit(X_train, Y_train)
+        print("start to predict", datetime.datetime.now())
+        # pred_test_prob = lr.predict_proba(X_test)
+        pred_test = lr.predict(X_test)
+
+        acc = lr.score(X_test, Y_test)
+        report = metrics.classification_report(Y_test, pred_test)
+        print('score: %s' % acc, datetime.datetime.now())
+        print(report)
+        cls.multi_classifier = lr
         print(rfe.support_)
         print(rfe.ranking_)

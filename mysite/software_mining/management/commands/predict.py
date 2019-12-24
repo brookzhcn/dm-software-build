@@ -7,3 +7,4 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         TrainData.train_lr()
+        TrainData.train_multiple()

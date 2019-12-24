@@ -3,6 +3,7 @@ import uuid
 from django.db.models import Sum, Count, Max
 from sklearn import tree, svm, metrics
 import numpy as np
+import pandas as pd
 from sklearn.preprocessing import OneHotEncoder, LabelEncoder, StandardScaler, MinMaxScaler
 from django.db.models import Q
 import matplotlib.pyplot as plt
@@ -20,6 +21,7 @@ from django.conf import settings
 # https://www.jianshu.com/p/e51e92a01a9c
 # C=1.0 : C为正则化系数λ的倒数，必须为正数，默认为1。和SVM中的C一样，值越小，代表正则化越强。
 from sklearn.linear_model import LogisticRegression
+import csv
 
 
 def check_file_type(filename):
@@ -676,9 +678,9 @@ class TrainData(models.Model):
         'feature_7',
         'feature_8',
         'feature_9',
-        'feature_11',
-        'feature_12',
-        'feature_13',
+        # 'feature_11',
+        # 'feature_12',
+        # 'feature_13',
     )
 
     @classmethod
@@ -705,7 +707,7 @@ class TrainData(models.Model):
         total_commits = total_commits.values_list(
             'project_name',
             'build_result',
-            'last_build_result',
+            # 'last_build_result',
             *cls.selected_features
         )
         if limit is not None:
@@ -858,16 +860,16 @@ class TrainData(models.Model):
                 item.feature_7,
                 item.feature_8,
                 item.feature_9,
-                item.feature_11,
-                sequence_failed_num,
-                sequence_passed_num
+                # item.feature_11,
+                # sequence_failed_num,
+                # sequence_passed_num
             ]
             print('sequence fail num: ', sequence_failed_num)
             print('sequence pass num: ', sequence_passed_num)
             project_fail_rate = fail_rate_dict[project_name]
             features = np.log(np.add(features, [1] * len(features)))
             last_build_int = 1 if last_build_result == 'passed' else 0
-            X = [[last_build_int, project_fail_rate, *features]]
+            X = [[project_fail_rate, *features]]
             # passed rate
             # print('\n', X)
             data = cls.classifier.predict_proba(X)
@@ -890,3 +892,33 @@ class TrainData(models.Model):
             fields=['last_build_result', 'build_result', 'predict_result'],
             batch_size=1000
         )
+
+    @classmethod
+    def write_csv(cls):
+        data = cls.test_objects.values('build_id').annotate(prediction=models.Min('predict_result'))
+        df = pd.read_csv(os.path.join(settings.DATA_ROOT_DIRECTORY, 'Non_errored_build_ids.csv'), dtype={
+            'ids': str
+        })
+        ids = df['ids']
+        with open('prediction.csv', mode='w',newline='' ) as csvfile:
+            fieldnames = ['ids', 'prediction']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            for id in ids:
+                # print("write csv: ", id)
+                item = list(filter(lambda x: x['build_id'] == id, data))
+                if len(item) == 0:
+                    item = {
+                        'prediction': 1
+                    }
+                else:
+                    item = item[0]
+                writer.writerow({
+                    'ids': id,
+                    'prediction': 1 if item['prediction'] > 0.5 else 0
+                })
+
+            # for item in data:
+            #     item['ids'] = item.pop('build_id')
+            #     item['prediction'] =1 if item['prediction'] > 0.5 else 0
+            #     writer.writerow(item)

@@ -10,6 +10,7 @@ from sklearn.model_selection import train_test_split
 import datetime
 import os
 import json
+from sklearn.feature_selection import RFE
 from sklearn import preprocessing
 from django.contrib.postgres.fields import JSONField, ArrayField
 # Create your models here.
@@ -632,13 +633,15 @@ class TrainData(models.Model):
         else:
             total_commits = cls.objects.filter(commit_num=commit_num).exclude(last_build_result=None)
         print("Start to prepare data ...", datetime.datetime.now())
+        print("total commit: ", total_commits.count())
         fail_rate_dict = {}
         for p in Project.objects.all():
             fail_rate_dict[p.name] = p.fail_rate_overall
         total_commits = total_commits.values_list(
+            'project_name',
             'build_result',
             'last_build_result',
-            'comment_count',
+            # 'comment_count',
             'feature_1',
             'feature_2',
             'feature_3',
@@ -654,25 +657,31 @@ class TrainData(models.Model):
         )
         if limit is not None:
             total_commits = total_commits[:limit]
+
         for item in total_commits:
-            label, last_build, *features = item
+            project_name, label, last_build, *features = item
             last_build = 1 if last_build == 'passed' else 0
+            p = fail_rate_dict[project_name]
             features = np.log(np.add(features, [1] * len(features)))
             Y.append(label)
-            X.append([last_build, *features])
-        X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.3, random_state=0)
+            X.append([last_build, p, *features])
+
+        # X = preprocessing.normalize(X)
+        X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.5, random_state=42)
         X_train_std = X_train
         X_test_std = X_test
         # sc = MinMaxScaler(feature_range=(0, 1))
         # X_train_std = sc.fit_transform(X_train)
         # X_test_std = sc.fit_transform(X_test)
         lr = LogisticRegression(C=10.0, random_state=0)
-        # ros = RandomOverSampler(random_state=0)
-        # X_resampled, y_resampled = ros.fit_sample(X_train_std, Y_train)
-        # rus = RandomUnderSampler(random_state=0)
+        # ros = RandomOverSampler(random_state=42, weights=[0.5, 0.5])
+        # X_train_std, Y_train = ros.fit_sample(X_train_std, Y_train)
+        rus = RandomUnderSampler(random_state=42,)
 
-        # X_resampled, y_resampled = rus.fit_sample(X_train_std, Y_train)
+        X_train_std, Y_train = rus.fit_sample(X_train_std, Y_train)
         print("Start to fit...", datetime.datetime.now())
+        rfe = RFE(lr, 5)
+        rfe = rfe.fit(X_train_std, Y_train)
         lr.fit(X_train_std, Y_train)
         # lr.fit(X_resampled, y_resampled)
         print("start to predict", datetime.datetime.now())
@@ -682,5 +691,7 @@ class TrainData(models.Model):
         acc = lr.score(X_test_std, Y_test)
         report = metrics.classification_report(Y_test, pred_test)
         print('score: %s' % acc, datetime.datetime.now())
-        print(pred_test_prob, Y_test, '\n', report)
+        print(report)
         cls.classifier = lr
+        print(rfe.support_)
+        print(rfe.ranking_)

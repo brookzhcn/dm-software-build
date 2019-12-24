@@ -399,8 +399,8 @@ class Build(models.Model):
                 last_build_success = 1
             else:
                 last_build_success = 0
-
-            x.append([last_build_success, *list(c.get_features(date_set=True))])
+            features = c.compute_features if c.compute_features else list(c.get_features())
+            x.append([last_build_success, *features])
             label = 1 if build.build_result == 'passed' else 0
             y.append(label)
         X_train, X_test, Y_train, Y_test = train_test_split(x, y, test_size=0.3, random_state=0)

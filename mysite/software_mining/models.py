@@ -21,6 +21,7 @@ from django.conf import settings
 # C=1.0 : C为正则化系数λ的倒数，必须为正数，默认为1。和SVM中的C一样，值越小，代表正则化越强。
 from sklearn.linear_model import LogisticRegression
 
+
 def check_file_type(filename):
     config_types = [
         '.yml',
@@ -103,6 +104,7 @@ class Project(models.Model):
     name = models.CharField(max_length=50, unique=True)
     fail_rate_overall = models.FloatField(blank=True, null=True)
     data_sync = models.BooleanField(default=False)
+    test_data_sync = models.BooleanField(default=False)
 
     def set_fail_rate_overall(self):
         all_build = Build.objects.filter(project_name=self.name)
@@ -124,16 +126,25 @@ class Project(models.Model):
             p.set_fail_rate_overall()
             # p.set_fail_rate_recently()
 
-    def import_data(self, file_name='train_set.txt'):
+    def import_data(self, file_name='train_set.txt', test=False):
+
         name = self.name
         print("\nImport data for: name ", name, datetime.datetime.now())
-        if self.data_sync:
+        if test and self.test_data_sync:
+            print('Test data is already imported.')
+            return
+
+        if (not test) and self.data_sync:
             print('Data is already imported.')
             return
 
-        path = os.path.join(settings.DATA_ROOT_DIRECTORY, name, file_name)
+        if test:
+            path = os.path.join(settings.DATA_ROOT_DIRECTORY, name, 'test_set.txt')
+            num = TrainData.test_objects.filter(project_name=name).delete()
+        else:
+            path = os.path.join(settings.DATA_ROOT_DIRECTORY, name, file_name)
+            num = TrainData.objects.filter(project_name=name).delete()
         assert os.path.exists(path), "path not exist %s" % path
-        num = TrainData.objects.filter(project_name=name).delete()
         print("clear data: ", num)
         with open(path, 'r', encoding='utf-8') as f:
             train_set = json.load(f)
@@ -147,7 +158,7 @@ class Project(models.Model):
             commit_sha_set = set()
             for build_order, build in enumerate(train_set):
                 build_result = build['build_result']
-                if build_result not in ['passed', 'failed']:
+                if (build_result not in ['passed', 'failed']) and (not test):
                     continue
                 # filter None
                 commits = list(filter(lambda x: x, build['commits']))
@@ -158,7 +169,7 @@ class Project(models.Model):
                     if commit_sha not in commit_sha_set:
                         commit_sha_set.add(commit_sha)
                         # feature 1 - 10 is for file
-                        files = commit['files']
+                        files = commit.get('files', None)
                         file_features = get_features_from_file(files=files)
                         commit_info = commit['commit']
                         obj = TrainData(
@@ -176,6 +187,7 @@ class Project(models.Model):
                             feature_11=len(commit['parents']),
                             feature_12=sequence_failed_num,
                             feature_13=sequence_passed_num,
+                            test=test,
                             **file_features
                         )
                         train_data.append(obj)
@@ -189,8 +201,11 @@ class Project(models.Model):
                     sequence_failed_num += 1
                     sequence_passed_num = 0
             print("prepare to update %s" % len(train_data))
-            TrainData.objects.bulk_create(train_data, batch_size=1000)
-            self.data_sync = True
+            TrainData.objects.bulk_create(train_data, batch_size=1000, ignore_conflicts=True)
+            if test:
+                self.test_data_sync = True
+            else:
+                self.data_sync = True
             self.save()
 
 
@@ -525,7 +540,6 @@ class Build(models.Model):
         first_builds = Build.objects.filter(build_order=0)
         first_build_success = first_builds.filter(build_result='passed').count() / first_builds.count()
 
-
         # 先关注只有一次build的模型
         x = []
         y = []
@@ -579,6 +593,36 @@ class Build(models.Model):
         cls.classifier = lr
 
 
+class TrainDataManager(models.Manager):
+    """
+    ignore all errored object
+    if commit is None, then see the last build or output passed
+    """
+
+    def get_queryset(self):
+        return super().get_queryset().filter(test=False)
+
+
+class TotalTrainDataManager(models.Manager):
+    """
+    ignore all errored object
+    if commit is None, then see the last build or output passed
+    """
+
+    def get_queryset(self):
+        return super().get_queryset()
+
+
+class TestDataManager(models.Manager):
+    """
+    ignore all errored object
+    if commit is None, then see the last build or output passed
+    """
+
+    def get_queryset(self):
+        return super().get_queryset().filter(test=True)
+
+
 class TrainData(models.Model):
     commit_sha = models.CharField(max_length=100, primary_key=True, db_index=True)
     committer_name = models.CharField(max_length=100)
@@ -613,6 +657,10 @@ class TrainData(models.Model):
     test = models.BooleanField(default=False)
     # logistical regression output for commit more than one
     predict_result = models.FloatField(null=True, blank=True)
+
+    objects = TrainDataManager()
+    test_objects = TestDataManager()
+    total_objects = TotalTrainDataManager()
 
     classifier = None
     multi_classifier = None
@@ -672,7 +720,7 @@ class TrainData(models.Model):
             X.append([last_build, p, *features])
 
         # X = preprocessing.normalize(X)
-        X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.3, random_state=42)
+        X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.1, random_state=42)
         X_train_std = X_train
         X_test_std = X_test
         # sc = MinMaxScaler(feature_range=(0, 1))
@@ -764,3 +812,81 @@ class TrainData(models.Model):
         cls.multi_classifier = lr
         print(rfe.support_)
         print(rfe.ranking_)
+
+    @classmethod
+    def predict(cls, project_name=None):
+        last_build_order = Build.objects.filter(project_name=project_name).aggregate(max=Max('build_order'))['max']
+        last_build = Build.objects.get(project_name=project_name, build_order=last_build_order)
+        last_build_result = last_build.build_result
+        if last_build_result == 'passed':
+            sequence_failed_num = 0
+            last_fail = Build.objects.filter(build_order__lt=last_build_order, build_result='failed').aggregate(
+                max=Max('build_order')
+            )['max']
+            if last_fail is None:
+                sequence_passed_num = Build.objects.filter(build_order__lte=last_build_order,
+                                                           project_name=project_name,
+                                                           build_result='passed').count()
+
+            else:
+                sequence_passed_num = last_build_order - last_fail
+        else:
+            sequence_passed_num = 0
+            last_success = Build.objects.filter(build_order__lt=last_build_order, build_result='passed').aggregate(
+                max=Max('build_order')
+            )['max']
+            if last_success is None:
+                sequence_failed_num = Build.objects.filter(build_order__lte=last_build_order,
+                                                           project_name=project_name,
+                                                           build_result='failed').count()
+
+            else:
+                sequence_failed_num = last_build_order - last_success
+        fail_rate_dict = {}
+        for project_fail_rate in Project.objects.all():
+            fail_rate_dict[project_fail_rate.name] = project_fail_rate.fail_rate_overall
+        update_objects = []
+        total_objects = cls.test_objects.filter(project_name=project_name).order_by('build_order')
+        for item in total_objects:
+            features = [
+                item.feature_1,
+                item.feature_2,
+                item.feature_3,
+                item.feature_4,
+                item.feature_5,
+                item.feature_6,
+                item.feature_7,
+                item.feature_8,
+                item.feature_9,
+                item.feature_11,
+                sequence_failed_num,
+                sequence_passed_num
+            ]
+            print('sequence fail num: ', sequence_failed_num)
+            print('sequence pass num: ', sequence_passed_num)
+            project_fail_rate = fail_rate_dict[project_name]
+            features = np.log(np.add(features, [1] * len(features)))
+            last_build_int = 1 if last_build_result == 'passed' else 0
+            X = [[last_build_int, project_fail_rate, *features]]
+            # passed rate
+            # print('\n', X)
+            data = cls.classifier.predict_proba(X)
+            # print(data)
+            item.predict_result = data[0][1]
+            item.last_build_result = last_build_result
+            item.build_result = 'passed' if item.predict_result > 0.5 else 'failed'
+            # update item
+            last_build_result = item.build_result
+            if item.build_result == 'passed':
+                sequence_failed_num = 0
+                sequence_passed_num += 1
+            else:
+                sequence_passed_num = 0
+                sequence_failed_num += 1
+            update_objects.append(item)
+
+        cls.total_objects.bulk_update(
+            update_objects,
+            fields=['last_build_result', 'build_result', 'predict_result'],
+            batch_size=1000
+        )

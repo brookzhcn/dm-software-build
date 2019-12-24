@@ -7,4 +7,6 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         TrainData.train_lr()
-        TrainData.train_multiple()
+        for p in Project.objects.all():
+            TrainData.predict(p.name)
+        # TrainData.train_multiple()

@@ -612,3 +612,75 @@ class TrainData(models.Model):
     test = models.BooleanField(default=False)
     # logistical regression output for commit more than one
     predict_result = models.FloatField(null=True, blank=True)
+
+    classifier = None
+
+    @classmethod
+    def train_lr(cls, project_names=None, limit=None, commit_num=1):
+        # first_builds = Build.objects.filter(build_order=0)
+        # first_build_success = first_builds.filter(build_result='passed').count() / first_builds.count()
+
+        # https://www.jianshu.com/p/e51e92a01a9c
+        # C=1.0 : C为正则化系数λ的倒数，必须为正数，默认为1。和SVM中的C一样，值越小，代表正则化越强。
+        from sklearn.linear_model import LogisticRegression
+        # 先关注只有一次build的模型
+        X = []
+        Y = []
+        if project_names is not None:
+            total_commits = cls.objects.filter(project_name__in=project_names, commit_num=commit_num).exclude(
+                last_build_result=None)
+        else:
+            total_commits = cls.objects.filter(commit_num=commit_num).exclude(last_build_result=None)
+        print("Start to prepare data ...", datetime.datetime.now())
+        fail_rate_dict = {}
+        for p in Project.objects.all():
+            fail_rate_dict[p.name] = p.fail_rate_overall
+        total_commits = total_commits.values_list(
+            'build_result',
+            'last_build_result',
+            'comment_count',
+            'feature_1',
+            'feature_2',
+            'feature_3',
+            'feature_4',
+            'feature_5',
+            'feature_6',
+            'feature_7',
+            'feature_8',
+            'feature_9',
+            'feature_11',
+            'feature_12',
+            'feature_13',
+        )
+        if limit is not None:
+            total_commits = total_commits[:limit]
+        for item in total_commits:
+            label, last_build, *features = item
+            last_build = 1 if last_build == 'passed' else 0
+            features = np.log(np.add(features, [1] * len(features)))
+            Y.append(label)
+            X.append([last_build, *features])
+        X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.3, random_state=0)
+        X_train_std = X_train
+        X_test_std = X_test
+        # sc = MinMaxScaler(feature_range=(0, 1))
+        # X_train_std = sc.fit_transform(X_train)
+        # X_test_std = sc.fit_transform(X_test)
+        lr = LogisticRegression(C=10.0, random_state=0)
+        # ros = RandomOverSampler(random_state=0)
+        # X_resampled, y_resampled = ros.fit_sample(X_train_std, Y_train)
+        # rus = RandomUnderSampler(random_state=0)
+
+        # X_resampled, y_resampled = rus.fit_sample(X_train_std, Y_train)
+        print("Start to fit...", datetime.datetime.now())
+        lr.fit(X_train_std, Y_train)
+        # lr.fit(X_resampled, y_resampled)
+        print("start to predict", datetime.datetime.now())
+        pred_test_prob = lr.predict_proba(X_test_std)
+        pred_test = lr.predict(X_test_std)
+
+        acc = lr.score(X_test_std, Y_test)
+        report = metrics.classification_report(Y_test, pred_test)
+        print('score: %s' % acc, datetime.datetime.now())
+        print(pred_test_prob, Y_test, '\n', report)
+        cls.classifier = lr

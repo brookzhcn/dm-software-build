@@ -1,17 +1,89 @@
 from django.db import models
 import uuid
 from django.db.models import Sum, Count, Max
-from sklearn import tree, svm
+from sklearn import tree, svm, metrics
 import numpy as np
 from sklearn.preprocessing import OneHotEncoder, LabelEncoder, StandardScaler, MinMaxScaler
 from django.db.models import Q
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 import datetime
+import os
+import json
+from sklearn import preprocessing
 from django.contrib.postgres.fields import JSONField, ArrayField
 # Create your models here.
 from imblearn.over_sampling import RandomOverSampler
 from imblearn.under_sampling import RandomUnderSampler
+from django.conf import settings
+
+
+def check_file_type(filename):
+    config_types = [
+        '.yml',
+        '.xml',
+        '.properties',
+        '.json',
+        '.config',
+        '.yaml',
+        '.conf'
+    ]
+    src_types = [
+        '.java',
+        '.rb',
+    ]
+    if not filename:
+        return 'others'
+    for c in src_types:
+        if filename.endswith(c):
+            return 'src'
+    for c in config_types:
+        if filename.endswith(c):
+            return 'conf'
+    return 'others'
+
+
+def get_features_from_file(files):
+    src_total_deletions = 0
+    src_total_additions = 0
+    src_file_num = 0
+
+    conf_total_deletions = 0
+    conf_total_additions = 0
+    conf_file_num = 0
+
+    src_patch_len = 0
+    conf_patch_len = 0
+
+    files_status = set()
+
+    if files:
+        for f in files:
+            file_type = check_file_type(f['filename'])
+            if file_type == 'src':
+                src_total_additions += f.get('additions', 0)
+                src_total_deletions += f.get('deletions', 0)
+                src_file_num += 1
+                src_patch_len += len(f.get('patch', ''))
+                files_status.add(f['status'])
+            elif file_type == 'conf':
+                conf_total_additions += f.get('additions', 0)
+                conf_total_deletions += f.get('deletions', 0)
+                conf_file_num += 1
+                conf_patch_len += len(f.get('patch', ''))
+                files_status.add(f['status'])
+
+    return dict(
+        feature_1=src_total_deletions,
+        feature_2=src_total_additions,
+        feature_3=src_file_num,
+        feature_4=conf_total_deletions,
+        feature_5=conf_total_additions,
+        feature_6=conf_file_num,
+        feature_7=src_patch_len,
+        feature_8=conf_patch_len,
+        feature_9=len(files_status)
+    )
 
 
 class Committer(models.Model):
@@ -28,25 +100,95 @@ class Project(models.Model):
     name = models.CharField(max_length=50, unique=True)
     fail_rate_overall = models.FloatField(blank=True, null=True)
     data_sync = models.BooleanField(default=False)
-#
-#     def set_fail_rate_overall(self):
-#         all_build = Build.objects.filter(project_name=self.name)
-#         fail_build = all_build.filter(build_result='failed')
-#         self.fail_rate_overall = fail_build.count() / all_build.count()
-#         self.save(update_fields=['fail_rate_overall'])
-#
-#     def set_fail_rate_recently(self, limit=10):
-#         all_build = Build.objects.filter(project_name=self.name)[:limit]
-#         fail_build = filter(lambda b: b.build_result == 'failed', all_build)
-#         self.fail_rate_recently = len(list(fail_build)) / len(all_build)
-#         self.save(update_fields=['fail_rate_recently'])
-#
-#     @classmethod
-#     def update_fail_rate(cls):
-#         for p in cls.objects.all():
-#             print("update fail rate for %s" % p.name)
-#             p.set_fail_rate_overall()
-#             p.set_fail_rate_recently()
+
+    def set_fail_rate_overall(self):
+        all_build = Build.objects.filter(project_name=self.name)
+        fail_build = all_build.filter(build_result='failed')
+        self.fail_rate_overall = fail_build.count() / all_build.count()
+        self.save(update_fields=['fail_rate_overall'])
+
+    #
+    #     def set_fail_rate_recently(self, limit=10):
+    #         all_build = Build.objects.filter(project_name=self.name)[:limit]
+    #         fail_build = filter(lambda b: b.build_result == 'failed', all_build)
+    #         self.fail_rate_recently = len(list(fail_build)) / len(all_build)
+    #         self.save(update_fields=['fail_rate_recently'])
+    #
+    @classmethod
+    def update_fail_rate(cls):
+        for p in cls.objects.all():
+            print("update fail rate for %s" % p.name)
+            p.set_fail_rate_overall()
+            # p.set_fail_rate_recently()
+
+    def import_data(self, file_name='train_set.txt'):
+        name = self.name
+        print("\nImport data for: name ", name, datetime.datetime.now())
+        if self.data_sync:
+            print('Data is already imported.')
+            return
+
+        path = os.path.join(settings.DATA_ROOT_DIRECTORY, name, file_name)
+        assert os.path.exists(path), "path not exist %s" % path
+        num = TrainData.objects.filter(project_name=name).delete()
+        print("clear data: ", num)
+        with open(path, 'r', encoding='utf-8') as f:
+            train_set = json.load(f)
+            train_data = []
+            # 之前连续passed的次数
+            sequence_passed_num = 0
+            # 之前连续build失败的次数
+            sequence_failed_num = 0
+            # valid_train_set = list(filter(lambda x: x['build_result'] in ['passed', 'failed'], train_set))
+            last_build_result = None
+            commit_sha_set = set()
+            for build_order, build in enumerate(train_set):
+                build_result = build['build_result']
+                if build_result not in ['passed', 'failed']:
+                    continue
+                # filter None
+                commits = list(filter(lambda x: x, build['commits']))
+                commit_num = len(commits)
+
+                for commit_order, commit in enumerate(commits):
+                    commit_sha = commit['sha']
+                    if commit_sha not in commit_sha_set:
+                        commit_sha_set.add(commit_sha)
+                        # feature 1 - 10 is for file
+                        files = commit['files']
+                        file_features = get_features_from_file(files=files)
+                        commit_info = commit['commit']
+                        obj = TrainData(
+                            commit_sha=commit_sha,
+                            committer_name=commit_info['committer']['name'],
+                            commit_order=commit_order,
+                            comment_count=commit_info['comment_count'],
+                            commit_message=commit_info['message'],
+                            project_name=name,
+                            build_id=build['build_id'],
+                            build_order=build_order,
+                            commit_num=commit_num,
+                            build_result=build['build_result'],
+                            last_build_result=last_build_result,
+                            feature_11=len(commit['parents']),
+                            feature_12=sequence_failed_num,
+                            feature_13=sequence_passed_num,
+                            **file_features
+                        )
+                        train_data.append(obj)
+                # update last build result at end
+                last_build_result = build_result
+
+                if build_result == 'passed':
+                    sequence_passed_num += 1
+                    sequence_failed_num = 0
+                else:
+                    sequence_failed_num += 1
+                    sequence_passed_num = 0
+            print("prepare to update %s" % len(train_data))
+            TrainData.objects.bulk_create(train_data, batch_size=1000)
+            self.data_sync = True
+            self.save()
 
 
 class File(models.Model):
@@ -142,6 +284,7 @@ class Commit(models.Model):
     deletions = models.IntegerField()
     files = JSONField(null=True)
     compute_features = ArrayField(models.FloatField(null=True), null=True)
+
     # give a score from Build -> Commit
     # build failed: 4 build success: -1
 
@@ -253,7 +396,7 @@ class Build(models.Model):
 
     def get_last_build(self):
         try:
-            return Build.objects.get(build_order=self.build_order-1, project_name=self.project_name)
+            return Build.objects.get(build_order=self.build_order - 1, project_name=self.project_name)
         except Build.DoesNotExist:
             return
 
@@ -366,7 +509,7 @@ class Build(models.Model):
         x = []
         y = []
         m = Build.objects.aggregate(max=Max('commit_num'))['max']
-        for num in range(1, m+1):
+        for num in range(1, m + 1):
             success_rate = cls.get_success_rate_by_commit_num(num)
             if success_rate is not None:
                 print(num, success_rate)
@@ -377,7 +520,7 @@ class Build(models.Model):
     @classmethod
     def train_lr(cls, project_name=None, limit=3000):
         first_builds = Build.objects.filter(build_order=0)
-        first_build_success = first_builds.filter(build_result='passed').count()/ first_builds.count()
+        first_build_success = first_builds.filter(build_result='passed').count() / first_builds.count()
 
         # https://www.jianshu.com/p/e51e92a01a9c
         # C=1.0 : C为正则化系数λ的倒数，必须为正数，默认为1。和SVM中的C一样，值越小，代表正则化越强。
@@ -390,6 +533,10 @@ class Build(models.Model):
         else:
             total_builds = cls.objects.filter(commit_num=1)[:limit]
         print("Start to prepare data ...", datetime.datetime.now())
+        fail_rate_dict = {}
+        for p in Project.objects.all():
+            fail_rate_dict[p.name] = p.fail_rate_overall
+
         for build in total_builds:
             c = Commit.objects.get(sha=build.commits[0])
             last_build = build.get_last_build()
@@ -400,14 +547,18 @@ class Build(models.Model):
             else:
                 last_build_success = 0
             features = c.compute_features if c.compute_features else list(c.get_features())
-            x.append([last_build_success, *features])
-            label = 1 if build.build_result == 'passed' else 0
-            y.append(label)
+            features = np.log(np.add(features, [1] * len(features)))
+            p = fail_rate_dict[build.project_name]
+            x.append([last_build_success, p, *features])
+            # label = 1 if build.build_result == 'passed' else 0
+            y.append(build.build_result)
         X_train, X_test, Y_train, Y_test = train_test_split(x, y, test_size=0.3, random_state=0)
-        sc = MinMaxScaler(feature_range=(0, 1))
-        X_train_std = sc.fit_transform(X_train)
-        X_test_std = sc.fit_transform(X_test)
-        lr = LogisticRegression(C=1000.0, random_state=0)
+        X_train_std = X_train
+        X_test_std = X_test
+        # sc = MinMaxScaler(feature_range=(0, 1))
+        # X_train_std = sc.fit_transform(X_train)
+        # X_test_std = sc.fit_transform(X_test)
+        lr = LogisticRegression(C=10.0, random_state=0)
         # ros = RandomOverSampler(random_state=0)
         # X_resampled, y_resampled = ros.fit_sample(X_train_std, Y_train)
         # rus = RandomUnderSampler(random_state=0)
@@ -417,9 +568,47 @@ class Build(models.Model):
         lr.fit(X_train_std, Y_train)
         # lr.fit(X_resampled, y_resampled)
         print("start to predict", datetime.datetime.now())
-        pred_test = lr.predict_proba(X_test_std)
+        pred_test_prob = lr.predict_proba(X_test_std)
+        pred_test = lr.predict(X_test_std)
+
         acc = lr.score(X_test_std, Y_test)
+        report = metrics.classification_report(Y_test, pred_test)
         print('score: %s' % acc, datetime.datetime.now())
-        print(pred_test, Y_test)
+        print(pred_test_prob, Y_test, '\n', report)
         cls.classifier = lr
 
+
+class TrainData(models.Model):
+    commit_sha = models.CharField(max_length=100, primary_key=True, db_index=True)
+    committer_name = models.CharField(max_length=100)
+    commit_order = models.PositiveIntegerField(default=0)
+    comment_count = models.PositiveIntegerField(default=0)
+    commit_message = models.TextField()
+    # build info
+    project_name = models.CharField(max_length=50)
+    build_id = models.CharField(max_length=20)
+    build_order = models.IntegerField()
+    commit_num = models.PositiveIntegerField(default=0)
+    # errored, failed, passed, errored could be ignored
+    build_result = models.CharField(max_length=20)
+    # 只关注上一次build结果，如果是首次可以用首次平均build成功率或者直接去掉
+    last_build_result = models.CharField(max_length=20, null=True)
+    # features used
+    feature_1 = models.FloatField(null=True, blank=True)
+    feature_2 = models.FloatField(null=True, blank=True)
+    feature_3 = models.FloatField(null=True, blank=True)
+    feature_4 = models.FloatField(null=True, blank=True)
+    feature_5 = models.FloatField(null=True, blank=True)
+    feature_6 = models.FloatField(null=True, blank=True)
+    feature_7 = models.FloatField(null=True, blank=True)
+    feature_8 = models.FloatField(null=True, blank=True)
+    feature_9 = models.FloatField(null=True, blank=True)
+    feature_10 = models.FloatField(null=True, blank=True)
+    feature_11 = models.FloatField(null=True, blank=True)
+    feature_12 = models.FloatField(null=True, blank=True)
+    feature_13 = models.FloatField(null=True, blank=True)
+    feature_14 = models.FloatField(null=True, blank=True)
+    feature_15 = models.FloatField(null=True, blank=True)
+    test = models.BooleanField(default=False)
+    # logistical regression output for commit more than one
+    predict_result = models.FloatField(null=True, blank=True)

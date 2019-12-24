@@ -256,7 +256,6 @@ class PreProcessor:
             # committer_obj_list = []
             train_set = json.load(f)
             valid_train_set = list(filter(lambda build: build['build_result'] in ['passed', 'failed'], train_set))
-
             for index, item in enumerate(valid_train_set):
                 # filter None
                 commits = list(filter(lambda x: x, item['commits']))

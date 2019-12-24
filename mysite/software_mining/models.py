@@ -209,13 +209,17 @@ class Commit(models.Model):
         return features
 
     @classmethod
-    def update_features(cls):
+    def update_features(cls, project_name):
+        print('updating project: %s' % project_name, datetime.datetime.now())
         update_objects = []
-        objs = cls.objects.filter(compute_features=None)
+        objs = cls.objects.filter(compute_features=None, project_name=project_name)
+        num = 0
         for obj in objs:
+            num += 1
             obj.compute_features = obj.get_features()
             update_objects.append(obj)
-        Commit.objects.bulk_update(update_objects, fields=['compute_features'], batch_size=10000)
+        print('total update: ', num)
+        Commit.objects.bulk_update(update_objects, fields=['compute_features'], batch_size=1000)
 
 
 class BuildManager(models.Manager):
@@ -404,7 +408,7 @@ class Build(models.Model):
         X_train_std = sc.fit_transform(X_train)
         X_test_std = sc.fit_transform(X_test)
         lr = LogisticRegression(C=1000.0, random_state=0)
-        ros = RandomOverSampler(random_state=0)
+        # ros = RandomOverSampler(random_state=0)
         # X_resampled, y_resampled = ros.fit_sample(X_train_std, Y_train)
         # rus = RandomUnderSampler(random_state=0)
 

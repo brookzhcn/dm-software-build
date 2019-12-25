@@ -13,6 +13,7 @@ import os
 import json
 from django.db import connection
 from sklearn.feature_selection import RFE
+import  random
 from sklearn import preprocessing
 from django.contrib.postgres.fields import JSONField, ArrayField
 # Create your models here.
@@ -89,7 +90,7 @@ def get_features_from_file(files):
         feature_6=conf_file_num,
         feature_7=src_patch_len,
         feature_8=conf_patch_len,
-        feature_9=len(files_status)
+        # feature_9=len(files_status)
     )
 
 
@@ -148,6 +149,9 @@ class Project(models.Model):
             path = os.path.join(settings.DATA_ROOT_DIRECTORY, name, file_name)
             num = TrainData.objects.filter(project_name=name).delete()
         assert os.path.exists(path), "path not exist %s" % path
+        # same_committer = 1
+        last_committer = ''
+        # feature 9 store same_committer
         print("clear data: ", num)
         with open(path, 'r', encoding='utf-8') as f:
             train_set = json.load(f)
@@ -166,34 +170,60 @@ class Project(models.Model):
                 # filter None
                 commits = list(filter(lambda x: x, build['commits']))
                 commit_num = len(commits)
+                if commit_num == 0:
+                    print('No commit: ', build['build_id'])
+                    obj = TrainData(
+                        commit_sha='',
+                        committer_name='',
+                        commit_order=0,
+                        comment_count=0,
+                        commit_message='',
+                        project_name=name,
+                        build_id=build['build_id'],
+                        build_order=build_order,
+                        commit_num=commit_num,
+                        build_result=build['build_result'],
+                        last_build_result=last_build_result,
+                        feature_9=0,
+                        feature_11= 0,
+                        feature_12=sequence_failed_num,
+                        feature_13=sequence_passed_num,
+                        test=test,
+                    )
+                    train_data.append(obj)
+                else:
+                    for commit_order, commit in enumerate(commits):
+                        commit_sha = commit['sha']
+                        if commit_sha not in commit_sha_set:
+                            commit_sha_set.add(commit_sha)
+                            # feature 1 - 10 is for file
+                            files = commit.get('files', None)
+                            file_features = get_features_from_file(files=files)
+                            commit_info = commit['commit']
+                            current_committer = commit_info['committer']['name']
+                            same_committer = int(current_committer == last_committer)
+                            last_committer = current_committer
+                            obj = TrainData(
+                                commit_sha=commit_sha,
+                                committer_name=commit_info['committer']['name'],
+                                commit_order=commit_order,
+                                comment_count=commit_info['comment_count'],
+                                commit_message=commit_info['message'],
+                                project_name=name,
+                                build_id=build['build_id'],
+                                build_order=build_order,
+                                commit_num=commit_num,
+                                build_result=build['build_result'],
+                                last_build_result=last_build_result,
+                                feature_9=same_committer,
+                                feature_11=len(commit['parents']),
+                                feature_12=sequence_failed_num,
+                                feature_13=sequence_passed_num,
+                                test=test,
+                                **file_features
+                            )
+                            train_data.append(obj)
 
-                for commit_order, commit in enumerate(commits):
-                    commit_sha = commit['sha']
-                    if commit_sha not in commit_sha_set:
-                        commit_sha_set.add(commit_sha)
-                        # feature 1 - 10 is for file
-                        files = commit.get('files', None)
-                        file_features = get_features_from_file(files=files)
-                        commit_info = commit['commit']
-                        obj = TrainData(
-                            commit_sha=commit_sha,
-                            committer_name=commit_info['committer']['name'],
-                            commit_order=commit_order,
-                            comment_count=commit_info['comment_count'],
-                            commit_message=commit_info['message'],
-                            project_name=name,
-                            build_id=build['build_id'],
-                            build_order=build_order,
-                            commit_num=commit_num,
-                            build_result=build['build_result'],
-                            last_build_result=last_build_result,
-                            feature_11=len(commit['parents']),
-                            feature_12=sequence_failed_num,
-                            feature_13=sequence_passed_num,
-                            test=test,
-                            **file_features
-                        )
-                        train_data.append(obj)
                 # update last build result at end
                 last_build_result = build_result
 
@@ -678,9 +708,9 @@ class TrainData(models.Model):
         'feature_7',
         'feature_8',
         'feature_9',
-        'feature_11',
+        # 'feature_11',
         'feature_12',
-        'feature_13',
+        # 'feature_13',
     )
 
     @classmethod
@@ -729,8 +759,8 @@ class TrainData(models.Model):
         # X_train_std = sc.fit_transform(X_train)
         # X_test_std = sc.fit_transform(X_test)
         lr = LogisticRegression(C=1000.0, random_state=0)
-        # ros = RandomOverSampler(random_state=42)
-        # X_train_std, Y_train = ros.fit_sample(X_train_std, Y_train)
+        ros = RandomOverSampler(random_state=42)
+        X_train_std, Y_train = ros.fit_sample(X_train_std, Y_train)
         # rus = RandomUnderSampler(random_state=42,)
 
         # X_train_std, Y_train = rus.fit_sample(X_train_std, Y_train)
@@ -792,10 +822,10 @@ class TrainData(models.Model):
             mutilple_X.append(proba_list)
             Y.append(v['Y'])
         mutilple_X = list(map(lambda d: [np.mean(d), np.min(d), np.max(d), len(d)], mutilple_X))
-        X_train, X_test, Y_train, Y_test = train_test_split(mutilple_X, Y, test_size=0.5, random_state=42)
+        X_train, X_test, Y_train, Y_test = train_test_split(mutilple_X, Y, test_size=0.3, random_state=42)
         lr = LogisticRegression(C=100.0, random_state=0)
         ros = RandomOverSampler(random_state=42)
-        # X_train, Y_train = ros.fit_sample(X_train, Y_train)
+        X_train, Y_train = ros.fit_sample(X_train, Y_train)
         # rus = RandomUnderSampler(random_state=42,)
 
         # X_train_std, Y_train = rus.fit_sample(X_train_std, Y_train)
@@ -822,18 +852,18 @@ class TrainData(models.Model):
         last_build_result = last_build.build_result
         if last_build_result == 'passed':
             sequence_failed_num = 0
-            last_fail = Build.objects.filter(build_order__lt=last_build_order, build_result='failed').aggregate(
-                max=Max('build_order')
-            )['max']
-            if last_fail is None:
-                sequence_passed_num = Build.objects.filter(build_order__lte=last_build_order,
-                                                           project_name=project_name,
-                                                           build_result='passed').count()
-
-            else:
-                sequence_passed_num = last_build_order - last_fail
+            # last_fail = Build.objects.filter(build_order__lt=last_build_order, build_result='failed').aggregate(
+            #     max=Max('build_order')
+            # )['max']
+            # if last_fail is None:
+            #     sequence_passed_num = Build.objects.filter(build_order__lte=last_build_order,
+            #                                                project_name=project_name,
+            #                                                build_result='passed').count()
+            #
+            # else:
+            #     sequence_passed_num = last_build_order - last_fail
         else:
-            sequence_passed_num = 0
+            # sequence_passed_num = 0
             last_success = Build.objects.filter(build_order__lt=last_build_order, build_result='passed').aggregate(
                 max=Max('build_order')
             )['max']
@@ -860,12 +890,11 @@ class TrainData(models.Model):
                 item.feature_7,
                 item.feature_8,
                 item.feature_9,
-                item.feature_11,
+                # item.feature_11,
                 sequence_failed_num,
-                sequence_passed_num
+                # sequence_passed_num
             ]
-            print('sequence fail num: ', sequence_failed_num)
-            print('sequence pass num: ', sequence_passed_num)
+            # print('sequence pass num: ', sequence_passed_num)
             project_fail_rate = fail_rate_dict[project_name]
             features = np.log(np.add(features, [1] * len(features)))
             last_build_int = 1 if last_build_result == 'passed' else 0
@@ -876,15 +905,18 @@ class TrainData(models.Model):
             # print(data)
             item.predict_result = data[0][1]
             item.last_build_result = last_build_result
-            item.build_result = 'passed' if item.predict_result > 0.5 else 'failed'
+
+            item.build_result = np.random.choice(['passed', 'failed'], p=[item.predict_result, 1-item.predict_result])
+            # item.build_result = 'passed' if item.predict_result > 0.5 else 'failed'
             if item.build_order == 0:
+                print('sequence fail num: ', sequence_failed_num)
                 # update item
                 last_build_result = item.build_result
                 if item.build_result == 'passed':
                     sequence_failed_num = 0
-                    sequence_passed_num += 1
+                    # sequence_passed_num += 1
                 else:
-                    sequence_passed_num = 0
+                    # sequence_passed_num = 0
                     sequence_failed_num += 1
             update_objects.append(item)
 
@@ -893,6 +925,45 @@ class TrainData(models.Model):
             fields=['last_build_result', 'build_result', 'predict_result'],
             batch_size=1000
         )
+
+    @classmethod
+    def predict_multiple(cls):
+        total_commits = cls.test_objects.filter(commit_num__gt=1).values_list(
+            'project_name',
+            'build_id',
+            'build_result',
+            'last_build_result',
+            'predict_result'
+        )
+        fail_rate_dict = {}
+        for p in Project.objects.all():
+            fail_rate_dict[p.name] = p.fail_rate_overall
+        Y = []
+        build_dict = {}
+        # for project_name, build_id, build_result, in total_commits:
+        #     mutilple_X = list(map(lambda d: [np.mean(d), np.min(d), np.max(d), len(d)], mutilple_X))
+        X_train, X_test, Y_train, Y_test = train_test_split(mutilple_X, Y, test_size=0.3, random_state=42)
+        lr = LogisticRegression(C=100.0, random_state=0)
+        ros = RandomOverSampler(random_state=42)
+        X_train, Y_train = ros.fit_sample(X_train, Y_train)
+        # rus = RandomUnderSampler(random_state=42,)
+
+        # X_train_std, Y_train = rus.fit_sample(X_train_std, Y_train)
+        print("Start to fit...", datetime.datetime.now())
+        rfe = RFE(lr, 2)
+        rfe = rfe.fit(X_train, Y_train)
+        lr.fit(X_train, Y_train)
+        print("start to predict", datetime.datetime.now())
+        # pred_test_prob = lr.predict_proba(X_test)
+        pred_test = lr.predict(X_test)
+
+        acc = lr.score(X_test, Y_test)
+        report = metrics.classification_report(Y_test, pred_test)
+        print('score: %s' % acc, datetime.datetime.now())
+        print(report)
+        cls.multi_classifier = lr
+        print(rfe.support_)
+        print(rfe.ranking_)
 
     @classmethod
     def set_result_num(cls):

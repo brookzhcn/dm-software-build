@@ -11,6 +11,7 @@ from sklearn.model_selection import train_test_split
 import datetime
 import os
 import json
+from django.db import connection
 from sklearn.feature_selection import RFE
 from sklearn import preprocessing
 from django.contrib.postgres.fields import JSONField, ArrayField
@@ -203,7 +204,7 @@ class Project(models.Model):
                     sequence_failed_num += 1
                     sequence_passed_num = 0
             print("prepare to update %s" % len(train_data))
-            TrainData.objects.bulk_create(train_data, batch_size=1000, ignore_conflicts=True)
+            TrainData.objects.bulk_create(train_data, batch_size=1000)
             if test:
                 self.test_data_sync = True
             else:
@@ -626,7 +627,7 @@ class TestDataManager(models.Manager):
 
 
 class TrainData(models.Model):
-    commit_sha = models.CharField(max_length=100, primary_key=True, db_index=True)
+    commit_sha = models.CharField(max_length=100)
     committer_name = models.CharField(max_length=100)
     commit_order = models.PositiveIntegerField(default=0)
     comment_count = models.PositiveIntegerField(default=0)
@@ -660,6 +661,7 @@ class TrainData(models.Model):
     # logistical regression output for commit more than one
     predict_result = models.FloatField(null=True, blank=True)
 
+    result_num = models.IntegerField(null=True, blank=True)
     objects = TrainDataManager()
     test_objects = TestDataManager()
     total_objects = TotalTrainDataManager()
@@ -667,8 +669,6 @@ class TrainData(models.Model):
     classifier = None
     multi_classifier = None
     selected_features = (
-        # 'comment_count',
-        # 'build_order',
         'feature_1',
         'feature_2',
         'feature_3',
@@ -678,9 +678,9 @@ class TrainData(models.Model):
         'feature_7',
         'feature_8',
         'feature_9',
-        # 'feature_11',
-        # 'feature_12',
-        # 'feature_13',
+        'feature_11',
+        'feature_12',
+        'feature_13',
     )
 
     @classmethod
@@ -707,7 +707,7 @@ class TrainData(models.Model):
         total_commits = total_commits.values_list(
             'project_name',
             'build_result',
-            # 'last_build_result',
+            'last_build_result',
             *cls.selected_features
         )
         if limit is not None:
@@ -722,15 +722,15 @@ class TrainData(models.Model):
             X.append([last_build, p, *features])
 
         # X = preprocessing.normalize(X)
-        X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.1, random_state=42)
+        X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.3, random_state=42)
         X_train_std = X_train
         X_test_std = X_test
         # sc = MinMaxScaler(feature_range=(0, 1))
         # X_train_std = sc.fit_transform(X_train)
         # X_test_std = sc.fit_transform(X_test)
-        lr = LogisticRegression(C=10.0, random_state=0)
-        ros = RandomOverSampler(random_state=42)
-        X_train_std, Y_train = ros.fit_sample(X_train_std, Y_train)
+        lr = LogisticRegression(C=1000.0, random_state=0)
+        # ros = RandomOverSampler(random_state=42)
+        # X_train_std, Y_train = ros.fit_sample(X_train_std, Y_train)
         # rus = RandomUnderSampler(random_state=42,)
 
         # X_train_std, Y_train = rus.fit_sample(X_train_std, Y_train)
@@ -792,8 +792,8 @@ class TrainData(models.Model):
             mutilple_X.append(proba_list)
             Y.append(v['Y'])
         mutilple_X = list(map(lambda d: [np.mean(d), np.min(d), np.max(d), len(d)], mutilple_X))
-        X_train, X_test, Y_train, Y_test = train_test_split(mutilple_X, Y, test_size=0.3, random_state=42)
-        lr = LogisticRegression(C=10.0, random_state=0)
+        X_train, X_test, Y_train, Y_test = train_test_split(mutilple_X, Y, test_size=0.5, random_state=42)
+        lr = LogisticRegression(C=100.0, random_state=0)
         ros = RandomOverSampler(random_state=42)
         # X_train, Y_train = ros.fit_sample(X_train, Y_train)
         # rus = RandomUnderSampler(random_state=42,)
@@ -860,16 +860,16 @@ class TrainData(models.Model):
                 item.feature_7,
                 item.feature_8,
                 item.feature_9,
-                # item.feature_11,
-                # sequence_failed_num,
-                # sequence_passed_num
+                item.feature_11,
+                sequence_failed_num,
+                sequence_passed_num
             ]
             print('sequence fail num: ', sequence_failed_num)
             print('sequence pass num: ', sequence_passed_num)
             project_fail_rate = fail_rate_dict[project_name]
             features = np.log(np.add(features, [1] * len(features)))
             last_build_int = 1 if last_build_result == 'passed' else 0
-            X = [[project_fail_rate, *features]]
+            X = [[project_fail_rate, last_build_int, *features]]
             # passed rate
             # print('\n', X)
             data = cls.classifier.predict_proba(X)
@@ -877,14 +877,15 @@ class TrainData(models.Model):
             item.predict_result = data[0][1]
             item.last_build_result = last_build_result
             item.build_result = 'passed' if item.predict_result > 0.5 else 'failed'
-            # update item
-            last_build_result = item.build_result
-            if item.build_result == 'passed':
-                sequence_failed_num = 0
-                sequence_passed_num += 1
-            else:
-                sequence_passed_num = 0
-                sequence_failed_num += 1
+            if item.build_order == 0:
+                # update item
+                last_build_result = item.build_result
+                if item.build_result == 'passed':
+                    sequence_failed_num = 0
+                    sequence_passed_num += 1
+                else:
+                    sequence_passed_num = 0
+                    sequence_failed_num += 1
             update_objects.append(item)
 
         cls.total_objects.bulk_update(
@@ -894,31 +895,76 @@ class TrainData(models.Model):
         )
 
     @classmethod
-    def write_csv(cls):
-        data = cls.test_objects.values('build_id').annotate(prediction=models.Min('predict_result'))
+    def set_result_num(cls):
         df = pd.read_csv(os.path.join(settings.DATA_ROOT_DIRECTORY, 'Non_errored_build_ids.csv'), dtype={
             'ids': str
         })
         ids = df['ids']
-        with open('prediction.csv', mode='w',newline='' ) as csvfile:
-            fieldnames = ['ids', 'prediction']
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
-            for id in ids:
-                # print("write csv: ", id)
-                item = list(filter(lambda x: x['build_id'] == id, data))
-                if len(item) == 0:
-                    item = {
-                        'prediction': 1
-                    }
-                else:
-                    item = item[0]
-                writer.writerow({
-                    'ids': id,
-                    'prediction': 1 if item['prediction'] > 0.5 else 0
-                })
+        # updated_objects = []
+        # num = 0
+        num = len(ids)
+        # index = list(range(num))
+        print(datetime.datetime.now())
+        print(num)
+        tpl = "UPDATE software_mining_traindata SET result_num = %s WHERE build_id =%s"
+        with connection.cursor() as cursor:
+            sql = []
+            n = 0
+            for result_num, build_id in enumerate(ids):
+                sql.append((result_num, build_id))
+                n += 1
+                if n > 1000:
+                    print("excute :", result_num)
+                    cursor.executemany(tpl, sql)
+                    sql = []
+                    n = 0
+                    print(result_num)
 
-            # for item in data:
-            #     item['ids'] = item.pop('build_id')
-            #     item['prediction'] =1 if item['prediction'] > 0.5 else 0
-            #     writer.writerow(item)
+    print(datetime.datetime.now())
+    # for index, build_id in enumerate(ids):
+    #     objs = cls.test_objects.filter(build_id=build_id)
+    #     for obj in objs:
+    #         obj.result_num = index
+    #         updated_objects.append(obj)
+    #         num += 1
+    #         # print('num: ', num)
+    #         if num > 1000:
+    #             num = 0
+    #             print("update ", index)
+    #             cls.total_objects.bulk_update(updated_objects, fields=['result_num'], batch_size=1000)
+    #             updated_objects = []
+    # if updated_objects:
+    #     cls.total_objects.bulk_update(updated_objects, fields=['result_num'], batch_size=1000)
+
+
+# @classmethod
+# def write_csv(cls):
+#     pass
+    # data = cls.test_objects.values('build_id').annotate(prediction=models.Min('predict_result'))
+
+    # df1 = pd.DataFrame(data)
+    #
+    # # ids = df['ids']
+    # # prediction = df['prediction']
+    # result_df = pd.DataFrame(columns=['ids', 'prediction'])
+    # with open('prediction.csv', mode='w', newline='') as csvfile:
+    #     fieldnames = ['ids', 'prediction']
+    #     writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+    #     writer.writeheader()
+    #     for d in df.values:
+    #         print(d)
+    #         # print("write csv: ", id)
+    #         # df1.filter()
+    #         # item = list(filter(lambda x: x['build_id'] == d['id'], data))
+    #         item = df1[df1['build_id'] == d[0]]
+    #         result_df.append(item)
+    #
+    #         # writer.writerow({
+    #         #     'ids': id,
+    #         #     'prediction': 1 if item['prediction'] > 0.5 else 0
+    #         # })
+    #     result_df.to_csv(csvfile)
+    #     # for item in data:
+    #     #     item['ids'] = item.pop('build_id')
+    #     #     item['prediction'] =1 if item['prediction'] > 0.5 else 0
+    #     #     writer.writerow(item)
